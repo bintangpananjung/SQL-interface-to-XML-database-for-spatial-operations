@@ -1,0 +1,284 @@
+[
+  {
+    "id": "Q-1A",
+    "executionTime": 159,
+    "totaldata": 2,
+    "totalField": [
+      {
+        "col": "rs",
+        "sum": 14
+      }
+    ]
+  },
+  {
+    "id": "Q-1B",
+    "executionTime": 75,
+    "totaldata": 4,
+    "totalField": [
+      {
+        "col": "rs",
+        "sum": 14
+      }
+    ]
+  },
+  {
+    "id": "Q-1C",
+    "executionTime": 125,
+    "totaldata": 32,
+    "totalField": [
+      {
+        "col": "j",
+        "sum": 4
+      }
+    ]
+  },
+  {
+    "id": "Q-1D",
+    "executionTime": 11756,
+    "totaldata": 4647,
+    "totalField": [
+      {
+        "col": "bw",
+        "sum": 5
+      }
+    ]
+  },
+  {
+    "id": "Q-2A",
+    "executionTime": 65,
+    "totaldata": 2,
+    "totalField": [
+      {
+        "col": "rumahsakit",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2B",
+    "executionTime": 93,
+    "totaldata": 2,
+    "totalField": [
+      {
+        "col": "j",
+        "sum": 1
+      },
+      {
+        "col": "k",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2C",
+    "executionTime": 106,
+    "totaldata": 2,
+    "totalField": [
+      {
+        "col": "a",
+        "sum": 1
+      },
+      {
+        "col": "b",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2D",
+    "executionTime": 88,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "k",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2E",
+    "executionTime": 819,
+    "totaldata": 152,
+    "totalField": [
+      {
+        "col": "a",
+        "sum": 1
+      },
+      {
+        "col": "b",
+        "sum": 2
+      }
+    ]
+  },
+  {
+    "id": "Q-2F",
+    "executionTime": 81,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "k",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2G",
+    "executionTime": 99,
+    "totaldata": 33,
+    "totalField": [
+      {
+        "col": "j",
+        "sum": 2
+      },
+      {
+        "col": "k",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2H",
+    "executionTime": 81,
+    "totaldata": 2,
+    "totalField": [
+      {
+        "col": "a",
+        "sum": 1
+      },
+      {
+        "col": "b",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2I",
+    "executionTime": 81,
+    "totaldata": 2,
+    "totalField": [
+      {
+        "col": "j",
+        "sum": 2
+      },
+      {
+        "col": "k",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2J",
+    "executionTime": 79,
+    "totaldata": 2,
+    "totalField": [
+      {
+        "col": "rs1",
+        "sum": 14
+      },
+      {
+        "col": "rs2",
+        "sum": 14
+      }
+    ]
+  },
+  {
+    "id": "Q-2K",
+    "executionTime": 138,
+    "totaldata": 2877,
+    "totalField": [
+      {
+        "col": "rs",
+        "sum": 2
+      },
+      {
+        "col": "wb",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2L",
+    "executionTime": 197,
+    "totaldata": 44,
+    "totalField": [
+      {
+        "col": "rs",
+        "sum": 2
+      },
+      {
+        "col": "wb",
+        "sum": 1
+      }
+    ]
+  },
+  {
+    "id": "Q-2M",
+    "executionTime": 416,
+    "totaldata": 54,
+    "totalField": [
+      {
+        "col": "s",
+        "sum": 2
+      }
+    ]
+  },
+  {
+    "id": "Q-2N",
+    "executionTime": 80,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "r",
+        "sum": 14
+      }
+    ]
+  },
+  {
+    "id": "Q-2O",
+    "executionTime": 70,
+    "totaldata": 5,
+    "totalField": [
+      {
+        "col": "r",
+        "sum": 14
+      }
+    ]
+  },
+  {
+    "id": "Q-2P",
+    "executionTime": 656,
+    "totaldata": 51,
+    "totalField": [
+      {
+        "col": "bataswilayah",
+        "sum": 2
+      }
+    ]
+  },
+  {
+    "id": "Q-2Q",
+    "executionTime": 644,
+    "totaldata": 51,
+    "totalField": [
+      {
+        "col": "bataswilayah",
+        "sum": 5
+      }
+    ]
+  },
+  {
+    "id": "Q-3A",
+    "executionTime": 207,
+    "totaldata": 179,
+    "totalField": [
+      {
+        "col": "rs",
+        "sum": 1
+      },
+      {
+        "col": "w",
+        "sum": 7
+      }
+    ]
+  }
+]

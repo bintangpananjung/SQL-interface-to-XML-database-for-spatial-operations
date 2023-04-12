@@ -1,0 +1,1 @@
+export const DEFAULT_TABLE = "DEFAULT_TABLE";

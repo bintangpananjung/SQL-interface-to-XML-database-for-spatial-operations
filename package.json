@@ -1,0 +1,47 @@
+{
+  "name": "code",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha -r ts-node/register test/sqlrebuilder.test.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@existdb/node-exist": "^5.4.0",
+    "@types/chai": "^4.2.14",
+    "@types/lodash": "^4.14.168",
+    "@types/mocha": "^8.2.0",
+    "@types/mongodb": "^3.6.8",
+    "@types/pg": "^7.14.10",
+    "basex": "^1.0.1",
+    "chai": "^4.3.4",
+    "cookie-parser": "^1.4.5",
+    "ejs": "^3.1.6",
+    "eslint": "^7.18.0",
+    "eslint-config-prettier": "^7.1.0",
+    "eslint-plugin-prettier": "^3.3.1",
+    "express": "^4.17.1",
+    "flora-sql-parser": "git+https://github.com/godmodelabs/flora-sql-parser.git",
+    "js-sql-parser": "^1.4.1",
+    "lodash": "^4.17.21",
+    "mongodb": "^3.6.4",
+    "morgan": "^1.10.0",
+    "nano": "^9.0.3",
+    "node-sql-parser": "^3.1.0",
+    "pegjs": "^0.10.0",
+    "pg": "^8.5.1",
+    "pre-commit": "^1.2.2",
+    "sinon": "^10.0.0",
+    "sql-parser": "^0.5.0",
+    "winston": "^3.3.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.11",
+    "@types/sinon": "^9.0.11",
+    "mocha": "^8.3.2",
+    "ts-node": "^9.1.1",
+    "typescript": "^4.2.2"
+  }
+}

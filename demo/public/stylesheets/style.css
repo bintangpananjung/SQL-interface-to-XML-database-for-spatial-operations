@@ -1,0 +1,19 @@
+body {
+    padding: 50px;
+    font: 14px "Lucida Grande", Helvetica, Arial, sans-serif;
+  }
+  
+a {
+color: #00B7FF;
+}
+
+#mapid { height: 1000px; }
+
+#db-options {
+  padding: 5px 0px;
+  border-radius: 5px;
+  border: 1px solid #ced4da;
+  cursor: pointer;
+  margin: 20px 0;
+  padding: 5px;
+}

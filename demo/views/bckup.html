@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html xmlns:mso="urn:schemas-microsoft-com:office:office" xmlns:msdt="uuid:C2F41010-65B3-11d1-A29F-00AA00C14882">
+    <head>
+        <title></title>
+        <link rel='stylesheet' href='/stylesheets/style.css' />
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ==" crossorigin=""/>
+    
+<!--[if gte mso 9]><xml>
+<mso:CustomDocumentProperties>
+<mso:display_urn_x003a_schemas-microsoft-com_x003a_office_x003a_office_x0023_Editor msdt:dt="string">Muhammad Hanif Adzkiya</mso:display_urn_x003a_schemas-microsoft-com_x003a_office_x003a_office_x0023_Editor>
+<mso:Order msdt:dt="string">1391700.00000000</mso:Order>
+<mso:ComplianceAssetId msdt:dt="string"></mso:ComplianceAssetId>
+<mso:_ExtendedDescription msdt:dt="string"></mso:_ExtendedDescription>
+<mso:display_urn_x003a_schemas-microsoft-com_x003a_office_x003a_office_x0023_Author msdt:dt="string">Muhammad Hanif Adzkiya</mso:display_urn_x003a_schemas-microsoft-com_x003a_office_x003a_office_x0023_Author>
+<mso:TriggerFlowInfo msdt:dt="string"></mso:TriggerFlowInfo>
+<mso:ContentTypeId msdt:dt="string">0x010100997EC4AFCC39E149AA1ABBAEEC458E2F</mso:ContentTypeId>
+<mso:_SourceUrl msdt:dt="string"></mso:_SourceUrl>
+<mso:_SharedFileIndex msdt:dt="string"></mso:_SharedFileIndex>
+</mso:CustomDocumentProperties>
+</xml><![endif]-->
+</head>
+    <body>
+        <div class="container">
+            <h1 style="color: red"><%= Sistem Perbaikan %></h1>
+
+            <div class="card">
+                <div class="card-header" id="sql">
+                    <h2 class="mb-0">
+                        Pilih DBMS
+                    </h2>
+                </div>
+                <div class="card-body">
+                    <h3>DBMS sekarang : <%= dbms %></h3>
+                    <form method="get" action="/">
+                        <select id="db-options" name="dbms">
+                            <option value="mongodb">MongoDB</option>
+                            <option value="couchdb">CouchDB</option>
+                        </select>
+                        <br>
+                        <button type="submit" class="btn btn-primary">Pilih</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header" id="sql">
+                    <h2 class="mb-0">
+                        SQL
+                    </h2>
+                </div>
+
+                <div class="card-body">
+                    <form method="post" action="/">
+                        <input type="text" class="form-control" name="sql" placeholder="Put your query here">
+                        <input type="hidden" value="<%= dbms %>" name="dbms">
+                        <br>
+                        <button type="submit" class="btn btn-primary">Submit</button>
+                    </form>
+                </div>
+
+            </div>
+
+            <hr />
+
+            <% if(db !== undefined && listCollections !== undefined){ %>
+                <div class="card">
+                    <h4 class="card-header">
+                        Collections of db '<%= db %>' 
+                    </h4>
+        
+                    <div class="card-body">
+                        
+                        <% for(let idx = 0; idx < listCollections.length; idx++){ %>
+
+                            <%= listCollections[idx] %>
+                            <br/>
+
+                        <% } %>
+
+                    </div>
+                </div>
+        
+                <hr />
+            <% } %>
+
+            <% if(input !== undefined){ %>
+            <div class="card">
+                <h4 class="card-header">
+                    Input SQL
+                </h4>
+
+                <div class="card-body">
+                    
+                    <%= input %>
+                </div>
+            </div>
+            <br />
+            <% } %>
+
+            <% if(statistic !== undefined){ %>
+                <div class="card">
+                    <h4 class="card-header">
+                        Statistic
+                    </h4>
+    
+                    <div class="card-body">
+                        
+                        <h6>DB</h6><%= statistic.dbms %>
+                        <br>
+                        <h6>Total Waktu Eksekusi in ms</h6><%= statistic.executionTime %>
+                        <br>
+                        <h6>Total <i>collection</i> yang diambil dari DBMS berorientasi dokumen</i></h6><%= statistic.totalfetchdata %>
+                        <br>
+                        <h6>Total baris/data dari hasil akhir <i>query</i></h6> <%= statistic.totalfinalresultdata %>
+                    </div>
+                </div>
+
+            <hr />
+            <% } %>
+
+            <% if(result_geojson){ %>
+            <div id="mapid"></div>
+            <br>
+            <%} %>
+
+            <% if (typeof results != "undefined" && !error) { %>
+            <table class="table table-dark">
+                <thead>
+                <tr>
+                    <th scope="col">No</th>
+                    <% for (key in results[0]){
+                        %>
+                    <th scope="col"><%= key %></th>
+                    
+                    <% }%>
+                </tr>
+                </thead>
+                <tbody>
+                <% results.forEach((elem, index) => { %>
+                <tr>
+                    
+                    
+                    <th scope="row"><%= index + 1 %></th>
+                    <% for (key in elem) { %>
+                    <td><%= elem[key] %></td>
+                    <% } %>
+                    
+                </tr>
+                <% }) %>
+                </tbody>
+            </table>
+            <% } else if (error) { %>
+                <%= error %>
+            <% } %>
+
+            
+        </div>
+    </body>
+
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js" integrity="sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew==" crossorigin=""></script>
+    <script>
+    var mymap = L.map('mapid').setView([-6.2, 106.5], 10);
+    L.tileLayer('https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}', {
+        attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+        maxZoom: 18,
+        id: 'mapbox/streets-v11',
+        tileSize: 512,
+        zoomOffset: -1,
+        accessToken: 'pk.eyJ1Ijoibnl4aWE5MSIsImEiOiJja2FleHQ0MHoyNHJtMnpwNDc1OHd3NDI0In0.sm1qhNJEjQlQCIVFHIKG9g'
+    }).addTo(mymap);
+
+    let geojson = (<%- (JSON.stringify(result_geojson)) %>)
+    let result_geojson = JSON.parse(JSON.stringify(geojson));
+    
+    L.geoJSON(result_geojson, {
+        onEachFeature: function (feature, layer) {
+            var html = "";
+			for (prop in feature.properties){
+				html += prop+": "+feature.properties[prop]+"<br>";
+            };
+        if(feature.hasOwnProperty('properties')){
+            layer.bindPopup(html);
+        }}
+    }).addTo(mymap);
+
+    </script>
+</html>
