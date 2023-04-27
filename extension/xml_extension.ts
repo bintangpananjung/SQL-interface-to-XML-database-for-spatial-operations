@@ -1,9 +1,9 @@
 import { Column, From } from "flora-sql-parser";
 import { dropRight } from "lodash";
 import { types } from "pg";
-import { XMLExtension, GeoJSON, Supported } from "./extension";
+import { XMLNamespace, GeoJSON, Supported } from "./extension";
 
-abstract class GMLExtension<T> implements XMLExtension {
+abstract class XMLExtension<T> implements XMLNamespace {
   abstract connect(): void;
   abstract getAllFields(col_name: string): Promise<string[]>;
   abstract getResult(
@@ -17,23 +17,28 @@ abstract class GMLExtension<T> implements XMLExtension {
   abstract constructFunctionQuery(clause: any): string;
   abstract constructProjectionQuery(columns: Set<string>): string;
   abstract supportedFunctions: RegExp[];
-  abstract moduleNamespaces: string[];
+  abstract spatialModuleNamespaces: { prefix: string; namespace: string }[];
+  abstract supportedExtensionCheck(collection: string): Promise<any>;
+  abstract supportedXMLExtensionType: string[];
 
+  extensionType = "xml";
   supportedTypes = ["number", "string", "bool", "expr_list"];
-  namespaces = ["http://www.opengis.net/gml"];
-
+  spatialNamespace = [
+    { prefix: "gml", namespace: "http://www.opengis.net/gml" },
+    { prefix: "kml", namespace: "" },
+  ];
   supportedOperators = [
-    { origin: "AND", translation: "$and" },
-    { origin: "OR", translation: "$or" },
-    { origin: "=", translation: "$eq" },
-    { origin: "<", translation: "$lt" },
-    { origin: ">", translation: "$gt" },
-    { origin: "<=", translation: "$lte" },
-    { origin: ">=", translation: "$gte" },
-    { origin: "IS", translation: "IS" },
-    { origin: "IS NOT", translation: "IS NOT" },
-    { origin: "IN", translation: "$in" },
-    { origin: "NOT IN", translation: "$nin" },
+    { origin: "AND", translation: "and" },
+    { origin: "OR", translation: "or" },
+    { origin: "=", translation: "=" },
+    { origin: "<", translation: "<" },
+    { origin: ">", translation: ">" },
+    { origin: "<=", translation: "<=" },
+    { origin: ">=", translation: ">=" },
+    { origin: "IS NOT", translation: "not()" },
+    { origin: "IN", translation: "=" },
+    { origin: "NOT IN", translation: "!=" },
+    { origin: "!=", translation: "!=" },
   ];
   constructor(
     protected url: string,
@@ -43,6 +48,21 @@ abstract class GMLExtension<T> implements XMLExtension {
     protected password: string | null
   ) {}
 
+  constructSpatialNamespace(
+    namespaces: { prefix: string; namespace: string }[],
+    module: boolean
+  ) {
+    let namespaceQuery = "";
+    namespaces.forEach(element => {
+      if (module) {
+        namespaceQuery += `import module `;
+      } else {
+        namespaceQuery += `declare `;
+      }
+      namespaceQuery += `namespace ${element.prefix} = "${element.namespace}"; `;
+    });
+    return namespaceQuery;
+  }
   astToFuncStr(ast: any) {
     if (ast.type !== "binary_expr") {
       // Explore non binary func
@@ -87,7 +107,7 @@ abstract class GMLExtension<T> implements XMLExtension {
   // // Melakukan construct MongoDB Query.
   constructSelectionQuery(where: any): string {
     if (!where) {
-      return "{}";
+      return "";
     }
     const conditionalOperators = ["AND", "OR"];
 
@@ -97,11 +117,7 @@ abstract class GMLExtension<T> implements XMLExtension {
 
       if (operator == null) {
         if (where.type == "bool") {
-          if (where.value) {
-            return "{}";
-          } else {
-            return `{"_id": { "$exists": false }}`;
-          }
+          return "";
         }
         return selection;
       }
@@ -129,7 +145,7 @@ abstract class GMLExtension<T> implements XMLExtension {
           const { translation } = this.supportedOperators.find(
             ({ origin }) => origin === left.operator
           ) as Supported;
-          resultLeft = `{ "${translation}" : [${resultLeft}]`;
+          resultLeft = `${resultLeft} ${translation} `;
         }
         if (
           right.operator != operator &&
@@ -138,14 +154,14 @@ abstract class GMLExtension<T> implements XMLExtension {
           const { translation } = this.supportedOperators.find(
             ({ origin }) => origin === right.operator
           ) as Supported;
-          resultRight = `{ "${translation}" : [${resultRight}]`;
+          resultRight = `${resultRight} ${translation} `;
         }
-        selection += resultLeft + ", " + resultRight;
+        selection += resultLeft + resultRight;
         if (depth == 0) {
           const { translation } = this.supportedOperators.find(
             ({ origin }) => origin === where.operator
           ) as Supported;
-          selection = `{ "${translation}" : [${selection}]}`;
+          selection = `${resultLeft} ${translation} `;
         }
 
         return selection;
@@ -157,16 +173,16 @@ abstract class GMLExtension<T> implements XMLExtension {
       const { translation } = this.supportedOperators.find(
         ({ origin }) => origin === where.operator
       ) as Supported;
-
+      const access_col = "*:";
       if (type === "number") {
-        selection += `{"properties.${column}": { "${translation}": ${value} }}`;
+        selection += `${access_col}${column} ${translation} ${value} `;
       } else if (type === "string") {
-        selection += `{"properties.${column}": { "${translation}": "${value}" }}`;
+        selection += `${access_col}${column} ${translation} ${value} `;
       } else if (type === "null") {
         if (operator === "IS") {
-          selection += `{$or : [{ properties.${column} : { $exists: false } }, { properties.${column} : null }] }`;
+          selection += `fn:exists(${access_col}${column}/text()) `;
         } else if (operator === "IS NOT") {
-          selection += `{$and : [{ properties.${column} : { $exists: true } }, { properties.${column} :  { $ne: null } }] }`;
+          selection += `not(fn:exists(${access_col}${column}/text()))`;
         }
       } else if (type === "expr_list") {
         selection += `{"properties.${column}": {"${translation}": [`;
@@ -190,9 +206,10 @@ abstract class GMLExtension<T> implements XMLExtension {
     };
 
     const selection = recursion(where, 0, 0);
+    console.log(selection);
 
     return selection;
   }
 }
 
-export { GMLExtension };
+export { XMLExtension };

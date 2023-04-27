@@ -1,11 +1,17 @@
 import { MongoClient } from "mongodb";
 import { Column } from "flora-sql-parser";
 import { GeoJSON } from "../extension";
-import { GMLExtension } from "../gml_extension";
+import { XMLExtension } from "../xml_extension";
+import { DOMParserImpl as dom } from "xmldom-ts";
+import * as xpath from "xpath-ts";
+
 var basex = require("basex");
 
-class BaseXExtension extends GMLExtension<typeof basex> {
-  moduleNamespaces = ["http://expath.org/ns/geo"];
+class BaseXExtension extends XMLExtension<typeof basex> {
+  supportedXMLExtensionType = ["kml", "gml"];
+  spatialModuleNamespaces = [
+    { prefix: "geo", namespace: "http://expath.org/ns/geo" },
+  ];
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
     for (const pattern of this.supportedFunctions) {
@@ -39,6 +45,49 @@ class BaseXExtension extends GMLExtension<typeof basex> {
     super("localhost", null, "test", "admin", "admin");
   }
 
+  async supportedExtensionCheck(collection: string): Promise<any> {
+    let extensionsArray = "(";
+    this.supportedXMLExtensionType.forEach((element, idx) => {
+      extensionsArray += `'${element}'`;
+      if (idx != this.supportedXMLExtensionType.length - 1) {
+        extensionsArray += ",";
+      }
+    });
+    extensionsArray += ")";
+
+    let queryCheck = `for $i in ${extensionsArray} 
+    let $namespace := fn:namespace-uri-for-prefix($i, db:open("${this.db_name}","${collection}")/*)
+    return 
+      if(fn:exists($namespace)) then (
+      element {$i} {$namespace})
+      else ()
+      `;
+    const query = new Promise((resolve, reject) => {
+      this.client.query(queryCheck).results((err: any, res: any) => {
+        if (res.result.length > 0) {
+          const result: any = [];
+          (res.result as any).forEach((element: any) => {
+            const doc = new dom().parseFromString(element);
+            const nodes: any = xpath.select("/*", doc);
+            result.push({
+              prefix: nodes[0].localName,
+              namespace: nodes[0].firstChild.data,
+            });
+          });
+
+          resolve(result);
+        } else {
+          reject(
+            new Error(
+              "no spatial namespace found in the collection or extension type is not valid"
+            )
+          );
+        }
+      });
+    });
+    const result = await query;
+    return result;
+  }
   async connect() {
     try {
       this.client = new basex.Session(
@@ -47,6 +96,7 @@ class BaseXExtension extends GMLExtension<typeof basex> {
         this.username,
         this.password
       );
+      this.client.execute(`open ${this.db_name}`);
     } catch (e) {
       console.log(
         `Connection to : ${this.url} is failed, error : ${e.nessage}`
@@ -69,17 +119,53 @@ class BaseXExtension extends GMLExtension<typeof basex> {
     where: string,
     projection: string
   ): Promise<any> {
-    let col;
-
     if (!this.client) {
       await this.connect();
     }
-    let db = this.client.execute(`open ${this.db_name}`);
-    col = db.collection(collection);
-    JSON.parse(where);
-    const result = col
-      .find(JSON.parse(where), { projection: JSON.parse(projection) })
-      .toArray();
+
+    const constructXQuery = (spatialNamespace: any) => {
+      const namespaces = this.constructSpatialNamespace(
+        spatialNamespace,
+        false
+      );
+      const moduleNamespaces = this.constructSpatialNamespace(
+        this.spatialModuleNamespaces,
+        true
+      );
+
+      return (
+        namespaces +
+        moduleNamespaces +
+        `for $i in db:open("${this.db_name}","${collection}")//gml:featureMember/*
+      return element {'result'}
+      { $i/@*,
+        for $j in $i/*
+        return
+        if(boolean($j/*/@srsName)) then (
+        element {$j/*/local-name()} {geo:as-text($j/*)}
+        )
+        else (
+            element {$j/local-name()}{$j/text()}
+        )
+      }`
+      );
+    };
+    const checkResult = await this.supportedExtensionCheck(collection);
+
+    const query = new Promise((resolve, reject) => {
+      this.client
+        .query(constructXQuery(checkResult))
+        .results((err: any, res: any) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(res.result);
+          }
+        });
+    });
+    const result = await query;
+    // console.log(result);
+
     return result;
   }
 
@@ -93,12 +179,19 @@ class BaseXExtension extends GMLExtension<typeof basex> {
 
   async getCollectionsName(): Promise<string[]> {
     await this.connect();
-    let db = this.client.execute(`open ${this.db_name}`);
-    let collections = db.listCollections().toArray();
-    let listCollections = [];
-    for (let idx = 0; idx < (await collections).length; idx++) {
-      listCollections.push((await collections)[idx].name);
-    }
+    const promise: Promise<string[]> = new Promise((resolve, reject) => {
+      this.client
+        .query(`db:list-details("${this.db_name}")/text()`)
+        .results((err: any, res: any) => {
+          if (err) {
+            resolve(err);
+          } else {
+            resolve(res.result);
+          }
+        });
+    });
+
+    let listCollections: string[] = await promise;
 
     return listCollections;
   }

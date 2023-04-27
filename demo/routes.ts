@@ -4,6 +4,7 @@ import { CouchDbExtension } from "../extension/couchdb/couchdb_extension";
 import { MongoExtension } from "../extension/mongodb/mongo_extension";
 import { PostgisExtension } from "../src";
 import { BaseXExtension } from "../extension/basex/basex_extension";
+import { xml_databases } from "../extension/xml_databases/xml_databases";
 const view = path.join(__dirname, "./views/");
 const publicDir = path.join(__dirname, "./public/");
 
@@ -60,8 +61,14 @@ router.post("/", async (req, res) => {
   // const gis = dbms === "mongodb" ? mongoGis : couchGis;
   const db = gis.driver.getDbName();
   const listCollections = await gis.driver.getCollectionsName();
+
   let start = new Date().getTime();
   try {
+    // const xmldb_idx =xml_databases.findIndex((val:any)=>val.name==dbms)
+    // if(xmldb_idx>=0){
+    //   xml_databases[xmldb_idx].driver.supportedExtensionCheck()
+
+    // }
     let results = await gis.processQuery(sql);
     const executionTime = new Date().getTime() - start;
     const totalfetchdata = 0;

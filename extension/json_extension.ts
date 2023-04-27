@@ -18,8 +18,8 @@ abstract class JsonExtension<T> implements Extension {
   abstract constructProjectionQuery(columns: Set<string>): string;
   abstract supportedFunctions: RegExp[];
 
+  extensionType = "json";
   supportedTypes = ["number", "string", "bool", "expr_list"];
-
   supportedOperators = [
     { origin: "AND", translation: "$and" },
     { origin: "OR", translation: "$or" },
@@ -31,7 +31,7 @@ abstract class JsonExtension<T> implements Extension {
     { origin: "IS", translation: "IS" },
     { origin: "IS NOT", translation: "IS NOT" },
     { origin: "IN", translation: "$in" },
-    { origin: "NOT IN", translation: "$nin"}
+    { origin: "NOT IN", translation: "$nin" },
   ];
   constructor(
     protected url: string,
@@ -189,7 +189,6 @@ abstract class JsonExtension<T> implements Extension {
 
     return selection;
   }
-
 }
 
 export { JsonExtension };

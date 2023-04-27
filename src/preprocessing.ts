@@ -8,12 +8,11 @@ function filterWhereStatement(
   tree: Select,
   driver: Extension
 ): { supportedClauses: any; unsupportedClauses: any[] } {
-
   let supportedClauses: any = {};
   let unsupportedClauses: any[] = [];
   tree
-    .from!.filter((val) => !val.expr)
-    .forEach((val) => {
+    .from!.filter(val => !val.expr)
+    .forEach(val => {
       const from = val as From;
       supportedClauses[from.as as string] = [];
     });
@@ -47,7 +46,6 @@ function filterWhereStatement(
   const isSupportedClause = (
     clause: any
   ): { isSupported: boolean; table: string } => {
-
     const isSupportedCondition = (
       condition: any
     ): { isSupported: boolean; table: string } => {
@@ -59,7 +57,7 @@ function filterWhereStatement(
       let supportedOperator: boolean = true;
       if (condition.type === "binary_expr") {
         supportedOperator = driver.supportedOperators.some(
-          (val) => val.origin === condition.operator
+          val => val.origin === condition.operator
         );
       }
 
@@ -233,8 +231,8 @@ function fillTableWhere(tree: Select): Select {
   }
   const mapAs: any = {};
   tree
-    .from!.filter((val) => !val.expr)
-    .forEach((val) => {
+    .from!.filter(val => !val.expr)
+    .forEach(val => {
       const from = val as From;
       const as = from.as as string;
       mapAs[as] = from.table;
@@ -282,8 +280,8 @@ function nullRemoval(tree: Select): Select {
 function fillAsSelect(tree: Select) {
   const mapAs: any = {};
   tree
-    .from!.filter((val) => !val.expr)
-    .forEach((val) => {
+    .from!.filter(val => !val.expr)
+    .forEach(val => {
       const from = val as From;
       const as = from.as as string;
       mapAs[as] = from.table;

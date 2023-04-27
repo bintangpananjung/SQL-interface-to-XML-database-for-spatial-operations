@@ -16,6 +16,7 @@ interface Extension {
   supportedTypes: string[];
   supportedFunctions: RegExp[];
   supportedOperators: Supported[];
+  extensionType: string;
 
   connect(): void;
   constructSelectionQuery(where: any): string;
@@ -31,8 +32,14 @@ interface Extension {
   getCollectionsName(): Promise<string[]>;
 }
 
-interface XMLExtension extends Extension {
-  namespaces: string[];
-  moduleNamespaces: string[];
+interface XMLNamespace extends Extension {
+  spatialNamespace: { prefix: string; namespace: string }[];
+  spatialModuleNamespaces: { prefix: string; namespace: string }[];
+  constructSpatialNamespace: (
+    namespace: { prefix: string; namespace: string }[],
+    module: boolean
+  ) => string; //module=true-> construct module namespace
+  supportedXMLExtensionType: string[];
+  supportedExtensionCheck(collection: string): Promise<any>;
 }
-export { Extension, Supported, GeoJSON, XMLExtension };
+export { Extension, Supported, GeoJSON, XMLNamespace };

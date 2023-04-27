@@ -78,7 +78,7 @@ class PostgisExtension {
       if (_.has(listItem, "from")) {
         const treeResult = await this.processSelect(listItem);
         const whereResult = await this.finalresult(treeResult);
-        const fields = whereResult.fields.map((v) => v.name);
+        const fields = whereResult.fields.map(v => v.name);
         const rows = whereResult.rows;
         let values = [];
         for (const row of rows) {
@@ -164,8 +164,10 @@ class PostgisExtension {
   async processSelect(tree: Select) {
     tree = fixAst(tree);
     console.log(JSON.stringify(tree, null, 2));
+
     tree = await this.processSubQueryFrom(tree);
     tree = await this.processSubQueryWhere(tree);
+
     const { supportedClauses, unsupportedClauses } = filterWhereStatement(
       tree,
       this.driver
@@ -191,6 +193,8 @@ class PostgisExtension {
       }
       this.totalGetField.set(as, fields);
     }
+    console.log(JSON.stringify(finalResult, null, 2));
+
     if (finalResult.length == 0) {
       return tree;
     }
