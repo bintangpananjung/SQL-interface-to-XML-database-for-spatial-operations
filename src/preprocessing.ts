@@ -321,6 +321,7 @@ function fixAst(tree: Select) {
 
 function buildAst(query: string, parser: Parser): Select {
   let result = parser.parse(query) as Select;
+
   return fixAst(result);
 }
 

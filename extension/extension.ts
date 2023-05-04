@@ -41,5 +41,11 @@ interface XMLNamespace extends Extension {
   ) => string; //module=true-> construct module namespace
   supportedXMLExtensionType: string[];
   supportedExtensionCheck(collection: string): Promise<any>;
+  supportedSpatialType: string[];
+  supportedFunctionPrefix: {
+    name: string;
+    args: number;
+    postGISName: string;
+  }[];
 }
 export { Extension, Supported, GeoJSON, XMLNamespace };

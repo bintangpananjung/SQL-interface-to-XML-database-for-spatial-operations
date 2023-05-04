@@ -173,6 +173,7 @@ class PostgisExtension {
       this.driver
     );
     const mapColumnsPerTable = this.getColumns(tree, unsupportedClauses);
+    console.log(supportedClauses, unsupportedClauses, "unsu");
 
     const { finalResult, totalData } = await getData(
       tree,
@@ -193,7 +194,7 @@ class PostgisExtension {
       }
       this.totalGetField.set(as, fields);
     }
-    console.log(JSON.stringify(finalResult, null, 2));
+    // console.log(JSON.stringify(finalResult, null, 2));
 
     if (finalResult.length == 0) {
       return tree;

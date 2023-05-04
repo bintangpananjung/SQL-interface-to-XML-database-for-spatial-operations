@@ -20,6 +20,12 @@ abstract class XMLExtension<T> implements XMLNamespace {
   abstract spatialModuleNamespaces: { prefix: string; namespace: string }[];
   abstract supportedExtensionCheck(collection: string): Promise<any>;
   abstract supportedXMLExtensionType: string[];
+  abstract supportedSpatialType: string[];
+  abstract supportedFunctionPrefix: {
+    name: string;
+    args: number;
+    postGISName: string;
+  }[];
 
   extensionType = "xml";
   supportedTypes = ["number", "string", "bool", "expr_list"];
@@ -109,6 +115,7 @@ abstract class XMLExtension<T> implements XMLNamespace {
     if (!where) {
       return "";
     }
+
     const conditionalOperators = ["AND", "OR"];
 
     const recursion = (where: any, numOfOr: number, depth: number): string => {
@@ -137,33 +144,24 @@ abstract class XMLExtension<T> implements XMLNamespace {
 
       // if case != and or
       if (conditionalOperators.includes(where.operator)) {
-        const { left, right } = where;
-        if (
-          left.operator != operator &&
-          (left.operator == "AND" || left.operator == "OR")
-        ) {
-          const { translation } = this.supportedOperators.find(
-            ({ origin }) => origin === left.operator
-          ) as Supported;
-          resultLeft = `${resultLeft} ${translation} `;
-        }
-        if (
-          right.operator != operator &&
-          (right.operator == "AND" || right.operator == "OR")
-        ) {
-          const { translation } = this.supportedOperators.find(
-            ({ origin }) => origin === right.operator
-          ) as Supported;
-          resultRight = `${resultRight} ${translation} `;
-        }
-        selection += resultLeft + resultRight;
-        if (depth == 0) {
-          const { translation } = this.supportedOperators.find(
-            ({ origin }) => origin === where.operator
-          ) as Supported;
-          selection = `${resultLeft} ${translation} `;
-        }
-
+        // const { left, right } = where;
+        // if (left.operator == "AND" || left.operator == "OR") {
+        //   const { translation } = this.supportedOperators.find(
+        //     ({ origin }) => origin === left.operator
+        //   ) as Supported;
+        //   resultLeft = ` ${translation} ${resultLeft}`;
+        // }
+        // if (right.operator == "AND" || right.operator == "OR") {
+        //   const { translation } = this.supportedOperators.find(
+        //     ({ origin }) => origin === right.operator
+        //   ) as Supported;
+        //   resultRight = `${resultRight}${translation}`;
+        // }
+        // selection += resultLeft + resultRight;
+        const { translation } = this.supportedOperators.find(
+          ({ origin }) => origin === where.operator
+        ) as Supported;
+        selection += `${resultLeft}${translation} ${resultRight}`;
         return selection;
       }
 
@@ -177,7 +175,7 @@ abstract class XMLExtension<T> implements XMLNamespace {
       if (type === "number") {
         selection += `${access_col}${column} ${translation} ${value} `;
       } else if (type === "string") {
-        selection += `${access_col}${column} ${translation} ${value} `;
+        selection += `${access_col}${column} ${translation} '${value}' `;
       } else if (type === "null") {
         if (operator === "IS") {
           selection += `fn:exists(${access_col}${column}/text()) `;
@@ -206,7 +204,6 @@ abstract class XMLExtension<T> implements XMLNamespace {
     };
 
     const selection = recursion(where, 0, 0);
-    console.log(selection);
 
     return selection;
   }

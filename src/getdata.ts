@@ -29,7 +29,10 @@ async function getData(
   let resultPromise: any[] = [];
   collections.forEach(col => {
     const { as } = col;
+
     const selectionQuery = driver.constructSelectionQuery(groupWhere[as]);
+    console.log(selectionQuery, "where");
+
     const columns = mapColumnsPerTable.has(as)
       ? mapColumnsPerTable.get(as)!
       : new Set<string>();
@@ -42,7 +45,10 @@ async function getData(
   let finalResult: any[] = [];
   let totalData = 0;
   for (let i = 0; i < resultList.length; i++) {
-    const result = driver.standardizeData(resultList[i]);
+    let result = resultList[i];
+    if (driver.extensionType != "xml") {
+      result = driver.standardizeData(resultList[i]);
+    }
     finalResult.push({
       table: collections[i].name,
       as: collections[i].as,

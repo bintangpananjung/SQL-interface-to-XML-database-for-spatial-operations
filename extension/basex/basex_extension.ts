@@ -9,8 +9,27 @@ var basex = require("basex");
 
 class BaseXExtension extends XMLExtension<typeof basex> {
   supportedXMLExtensionType = ["kml", "gml"];
+  supportedFunctionPrefix: {
+    name: string;
+    args: number;
+    postGISName: string;
+  }[] = [
+    { name: "distance", postGISName: "ST_Distance", args: 2 },
+    { name: "within", postGISName: "ST_Within", args: 2 },
+    { name: "dimension", postGISName: "ST_Dimension", args: 1 },
+  ];
   spatialModuleNamespaces = [
     { prefix: "geo", namespace: "http://expath.org/ns/geo" },
+  ];
+  supportedSpatialType = [
+    "MultiPoint",
+    "Point",
+    "LineString",
+    "LinearRing",
+    "Polygon",
+    "MultiLineString",
+    "MultiPolygon",
+    "MultiGeometry",
   ];
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
@@ -22,14 +41,23 @@ class BaseXExtension extends XMLExtension<typeof basex> {
       }
       const { groups } = regResult!;
       const { fname } = groups as any;
-      switch (fname) {
-        case "mod":
-          return this.constructModFunction(regResult.groups!);
-        case "ST_Distance":
-          return this.constructSTDistanceFunction(regResult.groups!);
-        default:
-          break;
+      const funcPrefix = this.supportedFunctionPrefix.find(
+        val => (val.postGISName = fname)
+      );
+      if (fname == "mod") {
+        return this.constructModFunction(regResult.groups!);
       }
+      if (funcPrefix && funcPrefix.args == 2) {
+        return this.constructSpatialFunctionOneArgs(regResult.groups!);
+      }
+      // switch (fname) {
+      //   case "mod":
+      //     return this.constructModFunction(regResult.groups!);
+      //   case this.supportedFunctionPrefix.find(val=>val.postGISName=fname)?.args:
+      //     return this.constructSpatialFunctionOneArgs(regResult.groups!);
+      //   default:
+      //     break;
+      // }
       break;
     }
     return "";
@@ -38,7 +66,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   supportedFunctions = [
     /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
     /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
-    /(?<fname>ST_Distance)\(ST_AsText\(ST_GeomFromGeoJSON\('(?<constant1>.*type.*coordinates.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=) (?<constant2>[0-9\.]*)/g,
+    /(?<fname>.*)\(ST_AsText\(ST_GeomFromGML\('(?<constant1>.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant2>[0-9\.]*)/g,
   ];
 
   constructor() {
@@ -123,7 +151,11 @@ class BaseXExtension extends XMLExtension<typeof basex> {
       await this.connect();
     }
 
-    const constructXQuery = (spatialNamespace: any) => {
+    const constructXQuery = (
+      spatialNamespace: any,
+      where: any,
+      projection: any
+    ) => {
       const namespaces = this.constructSpatialNamespace(
         spatialNamespace,
         false
@@ -132,38 +164,54 @@ class BaseXExtension extends XMLExtension<typeof basex> {
         this.spatialModuleNamespaces,
         true
       );
-
+      let whereQuery = "";
+      if (where.length > 0) {
+        whereQuery = `[${where}]`;
+      }
       return (
         namespaces +
         moduleNamespaces +
-        `for $i in db:open("${this.db_name}","${collection}")//gml:featureMember/*
-      return element {'result'}
-      { $i/@*,
-        for $j in $i/*
+        `for $i in db:open("${this.db_name}","${collection}")//gml:featureMember/*${whereQuery}
+      return json:serialize(element {'json'}
+      { attribute {'objects'}{'json'},
+        for $j in $i/${projection}
         return
         if(boolean($j/*/@srsName)) then (
-        element {$j/*/local-name()} {geo:as-text($j/*)}
+        element {'geometry'} {geo:as-text($j/*)}
+        )
+        else if(boolean($j/@srsName)) then(
+          element {'geometry'} {geo:as-text($j)}          
         )
         else (
             element {$j/local-name()}{$j/text()}
         )
-      }`
+      })`
       );
     };
     const checkResult = await this.supportedExtensionCheck(collection);
 
     const query = new Promise((resolve, reject) => {
       this.client
-        .query(constructXQuery(checkResult))
+        .query(constructXQuery(checkResult, where, projection))
         .results((err: any, res: any) => {
           if (err) {
             reject(err);
           } else {
-            resolve(res.result);
+            const jsonResult: any = [];
+            res.result.forEach((element: any) => {
+              jsonResult.push(JSON.parse(element));
+            });
+            resolve(jsonResult);
           }
         });
     });
-    const result = await query;
+    let result: any = [];
+    try {
+      result = await query;
+      // console.log(result);
+    } catch (error) {
+      console.log(error);
+    }
     // console.log(result);
 
     return result;
@@ -199,47 +247,38 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   constructModFunction(groups: { [key: string]: string }): string {
     const { fname, tname, colname, constant1, operator, constant2 } =
       groups as any;
-    return `{ "properties.${colname}": { "$mod": [ ${constant1}, ${constant2} ] } }`;
+    return `*:${colname} mod ${constant1} ${operator} ${constant2}`;
   }
 
-  constructSTDistanceFunction(groups: { [key: string]: string }): string {
+  constructSpatialFunctionOneArgs(groups: { [key: string]: string }): string {
     const { fname, tname, colname, constant1, operator, constant2 } =
       groups as any;
-    let maxDistance = null;
-    let minDistance = null;
-    if (operator === "<=") {
-      maxDistance = constant2;
-    } else if (operator === ">=") {
-      minDistance = constant2;
-    } else if (operator === "=") {
-      maxDistance = constant2;
-      minDistance = constant2;
-    }
-    let result = `{"geometry" : {"$near": {"$geometry": ${constant1} `;
+    let result = `geo:distance(${constant1}, *[*/@srsName]/*) ${operator} ${constant2}`;
 
-    if (maxDistance != null) {
-      result += `, "$maxDistance": ${maxDistance * 111.32 * 1000}`;
-    }
-    if (minDistance != null) {
-      result += `, "$minDistance": ${minDistance * 111.32 * 1000}`;
-    }
-
-    return result + "}}}";
+    return result;
   }
 
   constructProjectionQuery(columns: Set<string>): string {
     if (columns.size == 0) {
-      return "{}";
+      return "*";
     }
-    let result = `{"_id": 0`;
-    for (const column of columns) {
-      if (column === "geometry") {
-        result += `,"geometry": 1`;
-        continue;
+    let result = `(`;
+    const ignoreQName = "*:";
+    let arrColumns = [...columns];
+    arrColumns.forEach((column, index) => {
+      if (column == "geometry") {
+        result += `*[*/@srsName]/*`;
+      } else {
+        result += `${ignoreQName}${column}`;
       }
-      result += `,"properties.${column}": { "$ifNull": [ "$properties.${column}", null ] }`;
-    }
-    return result + "}";
+      if (index < arrColumns.length - 1) {
+        result += ` | `;
+      }
+    });
+    // for (const column of columns) {
+    //   result += `${ignoreQName}${column}`;
+    // }
+    return result + ")";
   }
 }
 export { BaseXExtension };
