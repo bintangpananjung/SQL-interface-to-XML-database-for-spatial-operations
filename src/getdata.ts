@@ -31,7 +31,7 @@ async function getData(
     const { as } = col;
 
     const selectionQuery = driver.constructSelectionQuery(groupWhere[as]);
-    console.log(selectionQuery, "where");
+    // console.log(selectionQuery, "where");
 
     const columns = mapColumnsPerTable.has(as)
       ? mapColumnsPerTable.get(as)!
@@ -56,6 +56,8 @@ async function getData(
     });
     totalData += result.length;
   }
+  // console.log(finalResult);
+
   return { finalResult, totalData };
 }
 

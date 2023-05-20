@@ -1,6 +1,6 @@
 import { MongoClient } from "mongodb";
 import { Column } from "flora-sql-parser";
-import { GeoJSON } from "../extension";
+import { GML } from "../extension";
 import { XMLExtension } from "../xml_extension";
 import { DOMParserImpl as dom } from "xmldom-ts";
 import * as xpath from "xpath-ts";
@@ -42,13 +42,22 @@ class BaseXExtension extends XMLExtension<typeof basex> {
       const { groups } = regResult!;
       const { fname } = groups as any;
       const funcPrefix = this.supportedFunctionPrefix.find(
-        val => (val.postGISName = fname)
+        val => val.postGISName == fname
       );
       if (fname == "mod") {
         return this.constructModFunction(regResult.groups!);
       }
       if (funcPrefix && funcPrefix.args == 2) {
-        return this.constructSpatialFunctionOneArgs(regResult.groups!);
+        return this.constructSpatialFunctionTwoArgs(
+          regResult.groups!,
+          funcPrefix.name
+        );
+      }
+      if (funcPrefix && funcPrefix.args == 1) {
+        return this.constructSpatialFunctionOneArgs(
+          regResult.groups!,
+          funcPrefix.name
+        );
       }
       // switch (fname) {
       //   case "mod":
@@ -66,6 +75,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   supportedFunctions = [
     /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
     /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
+    /(?<fname>.*)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant>[0-9\.]*)/g,
     /(?<fname>.*)\(ST_AsText\(ST_GeomFromGML\('(?<constant1>.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant2>[0-9\.]*)/g,
   ];
 
@@ -131,6 +141,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
       );
     }
   }
+  //return all fields/column in query
 
   async getAllFields(col_name: string): Promise<string[]> {
     const db = this.client!.db();
@@ -172,8 +183,8 @@ class BaseXExtension extends XMLExtension<typeof basex> {
         namespaces +
         moduleNamespaces +
         `for $i in db:open("${this.db_name}","${collection}")//gml:featureMember/*${whereQuery}
-      return json:serialize(element {'json'}
-      { attribute {'objects'}{'json'},
+      return element {'result'}
+      { $i/@fid,
         for $j in $i/${projection}
         return
         if(boolean($j/*/@srsName)) then (
@@ -185,7 +196,22 @@ class BaseXExtension extends XMLExtension<typeof basex> {
         else (
             element {$j/local-name()}{$j/text()}
         )
-      })`
+      }`
+        //   `for $i in db:open("${this.db_name}","${collection}")//gml:featureMember/*${whereQuery}
+        // return json:serialize(element {'json'}
+        // { attribute {'objects'}{'json'},
+        //   for $j in $i/${projection}
+        //   return
+        //   if(boolean($j/*/@srsName)) then (
+        //   element {'geometry'} {geo:as-text($j/*)}
+        //   )
+        //   else if(boolean($j/@srsName)) then(
+        //     element {'geometry'} {geo:as-text($j)}
+        //   )
+        //   else (
+        //       element {$j/local-name()}{$j/text()}
+        //   )
+        // })`
       );
     };
     const checkResult = await this.supportedExtensionCheck(collection);
@@ -197,11 +223,11 @@ class BaseXExtension extends XMLExtension<typeof basex> {
           if (err) {
             reject(err);
           } else {
-            const jsonResult: any = [];
-            res.result.forEach((element: any) => {
-              jsonResult.push(JSON.parse(element));
-            });
-            resolve(jsonResult);
+            // const jsonResult: any = [];
+            // res.result.forEach((element: any) => {
+            //   jsonResult.push(JSON.parse(element));
+            // });
+            resolve(res.result);
           }
         });
     });
@@ -212,7 +238,6 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     } catch (error) {
       console.log(error);
     }
-    // console.log(result);
 
     return result;
   }
@@ -221,8 +246,8 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     return this.db_name;
   }
 
-  standardizeData(data: any): GeoJSON[] {
-    return data as GeoJSON[];
+  standardizeData(data: any): XMLDocument[] {
+    return data as XMLDocument[];
   }
 
   async getCollectionsName(): Promise<string[]> {
@@ -250,17 +275,29 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     return `*:${colname} mod ${constant1} ${operator} ${constant2}`;
   }
 
-  constructSpatialFunctionOneArgs(groups: { [key: string]: string }): string {
+  constructSpatialFunctionTwoArgs(
+    groups: { [key: string]: string },
+    funcName: string
+  ): string {
     const { fname, tname, colname, constant1, operator, constant2 } =
       groups as any;
-    let result = `geo:distance(${constant1}, *[*/@srsName]/*) ${operator} ${constant2}`;
+    let result = `geo:${funcName}(${constant1}, *[*/@srsName]/*) ${operator} ${constant2}`;
+
+    return result;
+  }
+  constructSpatialFunctionOneArgs(
+    groups: { [key: string]: string },
+    funcName: string
+  ): string {
+    const { fname, tname, colname, constant, operator } = groups as any;
+    let result = `geo:${funcName}(*[*/@srsName]/*) ${operator} ${constant}`;
 
     return result;
   }
 
   constructProjectionQuery(columns: Set<string>): string {
     if (columns.size == 0) {
-      return "*";
+      return "*|@*";
     }
     let result = `(`;
     const ignoreQName = "*:";

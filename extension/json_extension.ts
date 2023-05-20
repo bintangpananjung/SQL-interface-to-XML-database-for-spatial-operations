@@ -2,6 +2,7 @@ import { Column, From } from "flora-sql-parser";
 import { dropRight } from "lodash";
 import { types } from "pg";
 import { Extension, GeoJSON, Supported } from "./extension";
+import { doubleTheQuote } from "../src/sqlrebuilder";
 
 abstract class JsonExtension<T> implements Extension {
   abstract connect(): void;
@@ -78,6 +79,141 @@ abstract class JsonExtension<T> implements Extension {
       result += ast.right.value;
     }
     return result;
+  }
+  getFieldsData(totalGetField: Map<string, Set<string>>, finalResult: any[]) {
+    for (const countResult of finalResult) {
+      const { result, as } = countResult as any;
+      const sample = result[0];
+      const fields = new Set<string>();
+      if (sample.hasOwnProperty("geometry")) {
+        fields.add("geometry");
+      }
+      for (const prop in sample.properties) {
+        fields.add(prop);
+      }
+      totalGetField.set(as, fields);
+    }
+    return totalGetField;
+  }
+
+  addSelectTreeColumnsRebuild(sample: any, listColumns: any[]) {
+    if (sample.hasOwnProperty("properties")) {
+      for (let [key, value] of Object.entries(sample.properties)) {
+        listColumns.push({
+          expr: {
+            type: "column_ref",
+            table: null,
+            column: key,
+          },
+          as: null,
+        });
+      }
+    }
+
+    if (sample.hasOwnProperty("geometry")) {
+      listColumns.push({
+        expr: {
+          type: "function",
+          name: "ST_AsText",
+          args: {
+            type: "expr_list",
+            value: [
+              {
+                type: "function",
+                name: "ST_GeomFromGeoJSON",
+                args: {
+                  type: "expr_list",
+                  value: [
+                    {
+                      type: "column_ref",
+                      table: null,
+                      column: "geometry",
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        as: "geometry",
+      });
+    }
+    return listColumns;
+  }
+  addColumnAndMapKeyRebuild(sample: any) {
+    let columns: any[] = [];
+    let mapType = {} as any;
+    if (sample.hasOwnProperty("properties")) {
+      for (let [key, value] of Object.entries(sample.properties)) {
+        columns.push(key);
+        if (typeof value === "string") {
+          mapType[key] = "string";
+        } else if (typeof value === "number") {
+          mapType[key] = "number";
+        } else {
+          mapType[key] = "null";
+        }
+      }
+    }
+    return { columns, mapType };
+  }
+
+  getRowValuesRebuild(dataList: any[], columns: any[], mapType: any) {
+    let rows: any[] = [];
+    for (const data of dataList) {
+      let row: any = {
+        type: "row_value",
+        keyword: true,
+        value: [],
+      };
+      if (data.hasOwnProperty("properties")) {
+        for (const column of columns) {
+          const { properties } = data;
+          if (properties.hasOwnProperty(column)) {
+            let value = properties[column];
+            if (mapType[column] === "string") {
+              if (value === null) {
+                value = "";
+              } else if (typeof value !== "string") {
+                value = value.toString();
+              }
+              if (value.includes("'")) {
+                value = doubleTheQuote(value);
+              }
+            }
+            if (value == null) {
+              value = 0;
+            }
+
+            row.value.push({
+              type: mapType[column],
+              value: value,
+            });
+          } else {
+            row.value.push({
+              type: mapType[column],
+              value: null,
+            });
+          }
+        }
+      } else {
+        for (const column of columns) {
+          row.value.push({
+            type: mapType[column],
+            value: null,
+          });
+        }
+      }
+      if (data.hasOwnProperty("geometry")) {
+        row.value.push({
+          type: "string",
+          value: JSON.stringify(data.geometry),
+          // value: "a"
+        });
+      }
+      rows.push(row);
+    }
+    return rows;
   }
 
   // // Melakukan construct MongoDB Query.

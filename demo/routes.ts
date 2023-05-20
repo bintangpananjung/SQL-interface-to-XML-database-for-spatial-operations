@@ -64,11 +64,6 @@ router.post("/", async (req, res) => {
 
   let start = new Date().getTime();
   try {
-    // const xmldb_idx =xml_databases.findIndex((val:any)=>val.name==dbms)
-    // if(xmldb_idx>=0){
-    //   xml_databases[xmldb_idx].driver.supportedExtensionCheck()
-
-    // }
     let results = await gis.processQuery(sql);
     const executionTime = new Date().getTime() - start;
     const totalfetchdata = 0;

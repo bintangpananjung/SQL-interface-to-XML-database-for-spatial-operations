@@ -5,6 +5,7 @@ import Pool from "../pg-db";
 import { buildAst, filterWhereStatement, fixAst } from "./preprocessing";
 import { getData } from "./getdata";
 import { rebuildTree } from "./sqlrebuilder";
+import { XMLExtension } from "../extension/xml_extension";
 
 class PostgisExtension {
   private parser: Parser;
@@ -26,14 +27,18 @@ class PostgisExtension {
   convertToSQL(tree: Select): string {
     let query = util.astToSQL(JSON.parse(JSON.stringify(tree)));
 
+    query = query.replace(/\\r\\n/g, "");
     query = query.replace(/\\/g, "");
     query = query.replace(/`/g, "");
+    query = query.replace(/^\s+|\s+$|\s+(?=\s)/g, "");
+    // query = query.replace(/^\s+|\s+$|\s+(?=<)/g, "");
 
     return query;
   }
 
   async finalresult(tree: Select) {
     let query = this.convertToSQL(tree);
+    // console.log(query);
 
     query = query.replace(/ROW/g, "");
     let pgclient = await Pool.connect();
@@ -173,7 +178,7 @@ class PostgisExtension {
       this.driver
     );
     const mapColumnsPerTable = this.getColumns(tree, unsupportedClauses);
-    console.log(supportedClauses, unsupportedClauses, "unsu");
+    // console.log(supportedClauses, unsupportedClauses, "unsu");
 
     const { finalResult, totalData } = await getData(
       tree,
@@ -182,18 +187,14 @@ class PostgisExtension {
       mapColumnsPerTable
     );
     this.totalData += totalData;
-    for (const countResult of finalResult) {
-      const { result, as } = countResult as any;
-      const sample = result[0];
-      const fields = new Set<string>();
-      if (sample.hasOwnProperty("geometry")) {
-        fields.add("geometry");
-      }
-      for (const prop in sample.properties) {
-        fields.add(prop);
-      }
-      this.totalGetField.set(as, fields);
-    }
+    // console.log(totalData);
+    // console.log(finalResult.length);
+    this.totalGetField = this._driver.getFieldsData(
+      this.totalGetField,
+      finalResult
+    );
+    // console.log(this.totalGetField);
+
     // console.log(JSON.stringify(finalResult, null, 2));
 
     if (finalResult.length == 0) {
@@ -203,7 +204,8 @@ class PostgisExtension {
       tree,
       finalResult,
       unsupportedClauses,
-      mapColumnsPerTable
+      mapColumnsPerTable,
+      this._driver
     );
   }
 

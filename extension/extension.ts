@@ -7,6 +7,8 @@ type GeoJSON = {
   properties: any;
 };
 
+type GML = any;
+
 interface Supported {
   origin: string;
   translation: string;
@@ -28,8 +30,18 @@ interface Extension {
     projection: string
   ): Promise<any>;
   getDbName(): string;
-  standardizeData(data: any): GeoJSON[];
+  standardizeData(data: any): any[];
   getCollectionsName(): Promise<string[]>;
+  getFieldsData(
+    totalGetField: Map<string, Set<string>>,
+    finalResult: any[]
+  ): Map<string, Set<string>>;
+  addSelectTreeColumnsRebuild(sample: any, listColumns: any[]): any;
+  addColumnAndMapKeyRebuild(sample: any): {
+    columns: any[];
+    mapType: any;
+  };
+  getRowValuesRebuild(dataList: any[], columns: any[], mapType: any): any[];
 }
 
 interface XMLNamespace extends Extension {
@@ -48,4 +60,4 @@ interface XMLNamespace extends Extension {
     postGISName: string;
   }[];
 }
-export { Extension, Supported, GeoJSON, XMLNamespace };
+export { Extension, Supported, GeoJSON, XMLNamespace, GML };

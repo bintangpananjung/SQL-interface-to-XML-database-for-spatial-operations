@@ -1,7 +1,10 @@
 import { Column, From } from "flora-sql-parser";
-import { dropRight } from "lodash";
+import { dropRight, values } from "lodash";
 import { types } from "pg";
 import { XMLNamespace, GeoJSON, Supported } from "./extension";
+import { DOMParserImpl as dom } from "xmldom-ts";
+import * as xpath from "xpath-ts";
+import { doubleTheQuote } from "../src/sqlrebuilder";
 
 abstract class XMLExtension<T> implements XMLNamespace {
   abstract connect(): void;
@@ -12,7 +15,7 @@ abstract class XMLExtension<T> implements XMLNamespace {
     projection: string
   ): Promise<any>;
   abstract getDbName(): string;
-  abstract standardizeData(data: any): GeoJSON[];
+  abstract standardizeData(data: any): XMLDocument[];
   abstract getCollectionsName(): Promise<string[]>;
   abstract constructFunctionQuery(clause: any): string;
   abstract constructProjectionQuery(columns: Set<string>): string;
@@ -26,6 +29,162 @@ abstract class XMLExtension<T> implements XMLNamespace {
     args: number;
     postGISName: string;
   }[];
+  getRowValuesRebuild(dataList: any[], columns: any[], mapType: any): any[] {
+    let rows: any[] = [];
+
+    for (const data of dataList) {
+      let row: any = {
+        type: "row_value",
+        keyword: true,
+        value: [],
+      };
+      const doc = new dom().parseFromString(
+        data.replace(/^\s+|\s+$|\s+(?=<)/g, "")
+      );
+
+      for (const column of columns) {
+        const nodes: any = xpath.select(`/result/${column}`, doc);
+
+        if (nodes.length > 0) {
+          const node: any = nodes[0];
+
+          if (node.localName === "geometry") {
+            // console.log(node.toString());
+
+            row.value.push({
+              type: "string",
+              value: node.firstChild.data.toString(),
+              // value: "a"
+            });
+          } else {
+            if (node.firstChild) {
+              let value = node.firstChild.data;
+              // console.log(value, mapType[column]);
+
+              if (mapType[column] === "string") {
+                if (value === null) {
+                  value = "";
+                } else if (typeof value !== "string") {
+                  value = value.toString();
+                } else if (typeof value === "string") {
+                  value = `${value.toString()}`;
+                }
+                if (value.includes("'")) {
+                  value = doubleTheQuote(value);
+                }
+              }
+              if (value == null) {
+                value = 0;
+              }
+              row.value.push({
+                type: mapType[column],
+                value: value,
+              });
+            } else {
+              row.value.push({
+                type: mapType[column],
+                value: "",
+              });
+            }
+          }
+        } else {
+          row.value.push({
+            type: mapType[column],
+            value: null,
+          });
+        }
+      }
+
+      // else {
+      //   for (const column of columns) {
+      //     row.value.push({
+      //       type: mapType[column],
+      //       value: null,
+      //     });
+      //   }
+      // }
+      rows.push(row);
+    }
+    return rows;
+  }
+  addColumnAndMapKeyRebuild(sample: any): { columns: any[]; mapType: any } {
+    let columns: any[] = [];
+    let mapType = {} as any;
+    const doc = new dom().parseFromString(sample);
+    const nodes: any = xpath.select("/result/*", doc);
+
+    nodes.forEach((value: any) => {
+      columns.push(value.localName);
+      if (!isNaN(parseFloat(value.firstChild.data))) {
+        mapType[value.localName] = "number";
+      } else if (typeof value.firstChild.data === "string") {
+        mapType[value.localName] = "string";
+      } else {
+        mapType[value.localName] = "null";
+      }
+    });
+    return { columns, mapType };
+  }
+  addSelectTreeColumnsRebuild(sample: any, listColumns: any[]) {
+    const doc = new dom().parseFromString(sample);
+    const nodes: any = xpath.select("/result/*", doc);
+    nodes.forEach(
+      (value: any) => {
+        // if (value.localName == "geometry") {
+        //   listColumns.push({
+        //     expr: {
+        //       type: "function",
+        //       name: "ST_AsText",
+        //       args: {
+        //         type: "expr_list",
+        //         value: [
+        //           {
+        //             type: "function",
+        //             name: "ST_GeomFromGML",
+        //             args: {
+        //               type: "expr_list",
+        //               value: [
+        //                 {
+        //                   type: "column_ref",
+        //                   table: null,
+        //                   column: "geometry",
+        //                 },
+        //               ],
+        //             },
+        //           },
+        //         ],
+        //       },
+        //     },
+        //     as: "geometry",
+        //   });
+        // } else {
+        listColumns.push({
+          expr: {
+            type: "column_ref",
+            table: null,
+            column: value.localName,
+          },
+          as: null,
+        });
+      }
+      // }
+    );
+    return listColumns;
+  }
+  getFieldsData(totalGetField: Map<string, Set<string>>, finalResult: any[]) {
+    for (const countResult of finalResult) {
+      const { result, as } = countResult as any;
+      const sample = result[0];
+      const fields = new Set<string>();
+      const doc = new dom().parseFromString(sample);
+      const nodes: any = xpath.select("/result/*", doc);
+      nodes.forEach((node: any) => {
+        fields.add(node.localName);
+      });
+      totalGetField.set(as, fields);
+    }
+    return totalGetField;
+  }
 
   extensionType = "xml";
   supportedTypes = ["number", "string", "bool", "expr_list"];
