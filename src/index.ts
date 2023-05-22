@@ -26,6 +26,7 @@ class PostgisExtension {
 
   convertToSQL(tree: Select): string {
     let query = util.astToSQL(JSON.parse(JSON.stringify(tree)));
+    // console.log(query);
 
     query = query.replace(/\\r\\n/g, "");
     query = query.replace(/\\/g, "");

@@ -4,44 +4,25 @@ import { GML, XMLConfig } from "../extension";
 import { XMLExtension } from "../xml_extension";
 import { DOMParserImpl as dom } from "xmldom-ts";
 import * as xpath from "xpath-ts";
+const existdb = require("@existdb/node-exist");
 
-var basex = require("basex");
-
-class BaseXExtension extends XMLExtension<typeof basex> {
+class ExistDBExtension extends XMLExtension<typeof existdb> {
   version: XMLConfig;
+  supportedXMLExtensionType = ["gml"];
+  spatialModuleNamespaces = [];
   moduleConfig: XMLConfig[] = [
     {
-      version: ["7.6"],
-      getDocFunc(collection: any, db_name: any) {
-        return `db:open("${db_name}","${collection}")`;
+      version: ["6.0.1"],
+      getDocFunc(collection: any, db_name: any, client: any) {
+        return `collection("/db/${db_name}/${collection}")`;
       },
-      supportedSpatialFunctionPrefix: [
-        { name: "distance", postGISName: "ST_Distance", args: 2 },
-        { name: "within", postGISName: "ST_Within", args: 2 },
-        { name: "dimension", postGISName: "ST_Dimension", args: 1 },
-      ],
-      getCollectionNamesFunc(db_name: string) {
-        return `db:list-details("${db_name}")`;
-      },
-      getSTAsTextfunc(node: any) {
-        return `geo:as-text(${node})`;
+      supportedSpatialFunctionPrefix: [],
+      getCollectionNamesFunc(db_name: string, client: any) {
+        return client.collection.read(`db/${db_name}`);
       },
     },
   ];
-  supportedXMLExtensionType = ["kml", "gml"];
-  spatialModuleNamespaces = [
-    { prefix: "geo", namespace: "http://expath.org/ns/geo" },
-  ];
-  supportedSpatialType = [
-    "MultiPoint",
-    "Point",
-    "LineString",
-    "LinearRing",
-    "Polygon",
-    "MultiLineString",
-    "MultiPolygon",
-    "MultiGeometry",
-  ];
+  supportedSpatialType = [];
 
   supportedFunctions = [
     /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
@@ -54,19 +35,15 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     super("localhost", null, "test", "admin", "admin");
     this.version = {} as any;
   }
-
   async connect() {
     try {
-      this.client = new basex.Session(
-        this.url,
-        1984,
-        this.username,
-        this.password
-      );
-      this.client.execute(`open ${this.db_name}`);
+      this.client = existdb.connect({
+        basic_auth: { user: "admin", pass: "" },
+      });
+      //   console.log("connected");
     } catch (e) {
       console.log(
-        `Connection to : ${this.url} is failed, error : ${e.nessage}`
+        `Connection to : ${this.url} is failed, error : ${e.message}`
       );
     }
   }
@@ -75,27 +52,15 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     if (!this.client) {
       await this.connect();
     }
-    const promise: Promise<string> = new Promise((resolve, reject) => {
-      this.client
-        .query(`data(db:system()//version)`)
-        .results((err: any, res: any) => {
-          if (err) {
-            resolve(err);
-          } else {
-            resolve(res.result[0]);
-          }
-        });
-    });
-
-    const version = await promise;
-    const moduleInVersion = this.moduleConfig.find(val =>
-      val.version.some(el => el == version)
+    const version = await this.client.server.version();
+    const moduleInVersion = this.moduleConfig.find(
+      val => val.version == version
     );
     if (moduleInVersion) {
       this.version = moduleInVersion;
     } else {
       throw new Error(
-        "This BaseX version is still not implemented in this program"
+        "This ExistDB version is still not implemented in this program"
       );
     }
   }
@@ -136,10 +101,10 @@ class BaseXExtension extends XMLExtension<typeof basex> {
       //   default:
       //     break;
       // }
+      break;
     }
     return "";
   }
-
   //return all fields/column in query
 
   async getAllFields(col_name: string): Promise<string[]> {
@@ -163,53 +128,45 @@ class BaseXExtension extends XMLExtension<typeof basex> {
 
     const queryCheck = this.supportedExtensionCheck(collection);
 
-    const checkPromise = new Promise((resolve, reject) => {
-      this.client.query(queryCheck).results((err: any, res: any) => {
-        if (res.result.length > 0) {
-          const result: any = [];
-          (res.result as any).forEach((element: any) => {
-            const doc = new dom().parseFromString(element);
-            const nodes: any = xpath.select("/*", doc);
-            result.push({
-              prefix: nodes[0].localName,
-              namespace: nodes[0].firstChild.data,
-            });
-          });
-
-          resolve(result);
-        } else {
-          reject(
-            new Error(
-              "no spatial namespace found in the collection or extension type is not valid"
-            )
-          );
-        }
-      });
+    const queryChecked = await this.client.queries.read(queryCheck, {
+      "omit-xml-declaration": "no",
+      "insert-final-newline": "yes",
+      limit: 999999999,
     });
-    const checkResult = await checkPromise;
+    const doc = new dom().parseFromString(queryChecked);
+    const nodes: any = xpath.select("/*/*", doc);
 
-    const query = new Promise((resolve, reject) => {
-      this.client
-        .query(this.constructXQuery(collection, checkResult, where, projection))
-        .results((err: any, res: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            // const jsonResult: any = [];
-            // res.result.forEach((element: any) => {
-            //   jsonResult.push(JSON.parse(element));
-            // });
-            resolve(res.result);
-          }
-        });
+    const checkResult: any[] = [];
+    nodes.forEach((el: any) => {
+      checkResult.push({ prefix: el.localName, namespace: el.firstChild.data });
     });
-    let result: any = [];
+    let result: any[] = [];
+    // console.log(
+    //   this.constructXQuery(collection, checkResult, where, projection)
+    // );
+
     try {
-      result = await query;
+      const query = await this.client.queries.read(
+        this.constructXQuery(collection, checkResult, where, projection),
+        {
+          "omit-xml-declaration": "no",
+          "insert-final-newline": "yes",
+          limit: 999999999,
+        }
+      );
+      const docResult = new dom().parseFromString(query);
+      const nodesResult: any = xpath.select("/*/*", docResult);
+      // console.log(nodesResult[0].toString());
+
+      nodesResult.forEach((node: any) => {
+        result.push(node.toString());
+      });
+
       // console.log(result);
     } catch (error) {
       console.log(error);
     }
+
     return result;
   }
 
@@ -222,22 +179,11 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   }
 
   async getCollectionsName(): Promise<string[]> {
-    if (!this.client) {
-      await this.connect();
-    }
-    const promise: Promise<string[]> = new Promise((resolve, reject) => {
-      this.client
-        .query(`${this.version.getCollectionNamesFunc(this.db_name)}/text()`)
-        .results((err: any, res: any) => {
-          if (err) {
-            resolve(err);
-          } else {
-            resolve(res.result);
-          }
-        });
-    });
+    await this.connect();
+    const data = await this.client.collections.read("/db/test");
+    // console.log(data.collections);
 
-    let listCollections: string[] = await promise;
+    let listCollections: string[] = await data.collections;
 
     return listCollections;
   }
@@ -291,4 +237,4 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     return result + ")";
   }
 }
-export { BaseXExtension };
+export { ExistDBExtension };

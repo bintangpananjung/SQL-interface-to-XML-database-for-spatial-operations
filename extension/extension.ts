@@ -9,6 +9,19 @@ type GeoJSON = {
 
 type GML = any;
 
+type XMLConfig = {
+  //include all function that needed in building query
+  version: string[];
+  getDocFunc(collection: string, db_name: string, client?: any): string;
+  supportedSpatialFunctionPrefix: {
+    name: string;
+    args: number;
+    postGISName: string;
+  }[];
+  getCollectionNamesFunc(db_name: string, client?: any): string;
+  getSTAsTextfunc?(node: any): string;
+};
+
 interface Supported {
   origin: string;
   translation: string;
@@ -45,6 +58,7 @@ interface Extension {
 }
 
 interface XMLNamespace extends Extension {
+  version: XMLConfig;
   spatialNamespace: { prefix: string; namespace: string }[];
   spatialModuleNamespaces: { prefix: string; namespace: string }[];
   constructSpatialNamespace: (
@@ -52,12 +66,15 @@ interface XMLNamespace extends Extension {
     module: boolean
   ) => string; //module=true-> construct module namespace
   supportedXMLExtensionType: string[];
-  supportedExtensionCheck(collection: string): Promise<any>;
+  supportedExtensionCheck(collection: string): string;
   supportedSpatialType: string[];
-  supportedFunctionPrefix: {
-    name: string;
-    args: number;
-    postGISName: string;
-  }[];
+  constructXQuery(
+    collection: any,
+    spatialNamespace: any,
+    where: any,
+    projection: any
+  ): any;
+  moduleConfig: XMLConfig[];
+  initVersion(): any;
 }
-export { Extension, Supported, GeoJSON, XMLNamespace, GML };
+export { Extension, Supported, GeoJSON, XMLNamespace, GML, XMLConfig };

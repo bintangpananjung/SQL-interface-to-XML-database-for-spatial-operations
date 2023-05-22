@@ -5,6 +5,8 @@ import { MongoExtension } from "../extension/mongodb/mongo_extension";
 import { PostgisExtension } from "../src";
 import { BaseXExtension } from "../extension/basex/basex_extension";
 import { xml_databases } from "../extension/xml_databases/xml_databases";
+import { ExistDBExtension } from "../extension/existdb_extension/existdb_extension";
+import { XMLExtension } from "../extension/xml_extension";
 const view = path.join(__dirname, "./views/");
 const publicDir = path.join(__dirname, "./public/");
 
@@ -16,6 +18,9 @@ const mongoGis = new PostgisExtension(mongo);
 
 const basex = new BaseXExtension();
 const basexGis = new PostgisExtension(basex);
+
+const existdb = new ExistDBExtension();
+const existGis = new PostgisExtension(existdb);
 
 const router = express.Router();
 const title = "Sistem Perbaikan";
@@ -54,12 +59,21 @@ router.post("/", async (req, res) => {
     case "basex":
       gis = basexGis;
       break;
+    case "existdb":
+      gis = existGis;
+      break;
     default:
       gis = mongoGis;
       break;
   }
   // const gis = dbms === "mongodb" ? mongoGis : couchGis;
+  // console.log(gis.driver);
+  if (gis.driver.extensionType == "xml") {
+    await (gis.driver as any).initVersion();
+  }
+
   const db = gis.driver.getDbName();
+
   const listCollections = await gis.driver.getCollectionsName();
 
   let start = new Date().getTime();

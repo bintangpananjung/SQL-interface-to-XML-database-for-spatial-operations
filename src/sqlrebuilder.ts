@@ -313,6 +313,7 @@ function rebuildFromTree(
   //   rows.push(row);
   // }
   let rows = driver.getRowValuesRebuild(dataList, columns, mapType);
+
   if (typeof sample === "object") {
     if (sample.hasOwnProperty("geometry")) {
       columns.push("geometry");
