@@ -10,16 +10,17 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
   version: XMLConfig;
   supportedXMLExtensionType = ["gml"];
   spatialModuleNamespaces = [];
+  spatialNamespace: { prefix: string; namespace: string };
   moduleConfig: XMLConfig[] = [
     {
       version: ["6.0.1"],
       getDocFunc(collection: any, db_name: any, client: any) {
         return `collection("/db/${db_name}/${collection}")`;
       },
-      supportedSpatialFunctionPrefix: [],
       getCollectionNamesFunc(db_name: string, client: any) {
         return client.collection.read(`db/${db_name}`);
       },
+      modules: [],
     },
   ];
   supportedSpatialType = [];
@@ -34,6 +35,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
   constructor() {
     super("localhost", null, "test", "admin", "admin");
     this.version = {} as any;
+    this.spatialNamespace = {} as any;
   }
   async connect() {
     try {
@@ -75,7 +77,10 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
       }
       const { groups } = regResult!;
       const { fname } = groups as any;
-      const funcPrefix = this.version.supportedSpatialFunctionPrefix.find(
+      const moduleVersion = this.version.modules.find(
+        val => val.extension === this.spatialNamespace.prefix
+      );
+      const funcPrefix = moduleVersion?.supportedSpatialFunctionPrefix.find(
         (val: any) => val.postGISName == fname
       );
       if (fname == "mod") {
@@ -116,16 +121,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     );
     return Object.keys(result.properties);
   }
-
-  async getResult(
-    collection: string,
-    where: string,
-    projection: string
-  ): Promise<any> {
-    if (!this.client) {
-      await this.connect();
-    }
-
+  async executeExtensionCheckQuery(collection: string): Promise<void> {
     const queryCheck = this.supportedExtensionCheck(collection);
 
     const queryChecked = await this.client.queries.read(queryCheck, {
@@ -135,11 +131,27 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     });
     const doc = new dom().parseFromString(queryChecked);
     const nodes: any = xpath.select("/*/*", doc);
+    if (nodes.length > 0) {
+      let checkResult = {
+        prefix: nodes[0].localName,
+        namespace: nodes[0].firstChild.data,
+      };
+      this.spatialNamespace = checkResult;
+    } else {
+      throw new Error(
+        "no spatial namespace found in the collection or extension type is not valid"
+      );
+    }
+  }
 
-    const checkResult: any[] = [];
-    nodes.forEach((el: any) => {
-      checkResult.push({ prefix: el.localName, namespace: el.firstChild.data });
-    });
+  async getResult(
+    collection: string,
+    where: string,
+    projection: string
+  ): Promise<any> {
+    if (!this.client) {
+      await this.connect();
+    }
     let result: any[] = [];
     // console.log(
     //   this.constructXQuery(collection, checkResult, where, projection)
@@ -147,7 +159,12 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
 
     try {
       const query = await this.client.queries.read(
-        this.constructXQuery(collection, checkResult, where, projection),
+        this.constructXQuery(
+          collection,
+          this.spatialNamespace,
+          where,
+          projection
+        ),
         {
           "omit-xml-declaration": "no",
           "insert-final-newline": "yes",
@@ -212,29 +229,6 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     let result = `geo:${funcName}(*[*/@srsName]/*) ${operator} ${constant}`;
 
     return result;
-  }
-
-  constructProjectionQuery(columns: Set<string>): string {
-    if (columns.size == 0) {
-      return "*";
-    }
-    let result = `(`;
-    const ignoreQName = "*:";
-    let arrColumns = [...columns];
-    arrColumns.forEach((column, index) => {
-      if (column == "geometry") {
-        result += `*[*/@srsName]/*`;
-      } else {
-        result += `${ignoreQName}${column}`;
-      }
-      if (index < arrColumns.length - 1) {
-        result += ` | `;
-      }
-    });
-    // for (const column of columns) {
-    //   result += `${ignoreQName}${column}`;
-    // }
-    return result + ")";
   }
 }
 export { ExistDBExtension };

@@ -9,28 +9,37 @@ var basex = require("basex");
 
 class BaseXExtension extends XMLExtension<typeof basex> {
   version: XMLConfig;
+  spatialNamespace: { prefix: string; namespace: string };
   moduleConfig: XMLConfig[] = [
     {
       version: ["7.6"],
       getDocFunc(collection: any, db_name: any) {
         return `db:open("${db_name}","${collection}")`;
       },
-      supportedSpatialFunctionPrefix: [
-        { name: "distance", postGISName: "ST_Distance", args: 2 },
-        { name: "within", postGISName: "ST_Within", args: 2 },
-        { name: "dimension", postGISName: "ST_Dimension", args: 1 },
-      ],
       getCollectionNamesFunc(db_name: string) {
         return `db:list-details("${db_name}")`;
       },
-      getSTAsTextfunc(node: any) {
-        return `geo:as-text(${node})`;
-      },
+      modules: [
+        {
+          supportedSpatialFunctionPrefix: [
+            { name: "distance", postGISName: "ST_Distance", args: 2 },
+            { name: "within", postGISName: "ST_Within", args: 2 },
+            { name: "dimension", postGISName: "ST_Dimension", args: 1 },
+          ],
+          getSTAsTextfunc(node: any) {
+            return `geo:as-text(${node})`;
+          },
+          extension: "gml",
+        },
+      ],
     },
   ];
   supportedXMLExtensionType = ["kml", "gml"];
   spatialModuleNamespaces = [
-    { prefix: "geo", namespace: "http://expath.org/ns/geo" },
+    {
+      modules: [{ prefix: "geo", namespace: "http://expath.org/ns/geo" }],
+      extension: "gml",
+    },
   ];
   supportedSpatialType = [
     "MultiPoint",
@@ -53,6 +62,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   constructor() {
     super("localhost", null, "test", "admin", "admin");
     this.version = {} as any;
+    this.spatialNamespace = {} as any;
   }
 
   async connect() {
@@ -110,7 +120,10 @@ class BaseXExtension extends XMLExtension<typeof basex> {
       }
       const { groups } = regResult!;
       const { fname } = groups as any;
-      const funcPrefix = this.version.supportedSpatialFunctionPrefix.find(
+      const moduleVersion = this.version.modules.find(
+        val => val.extension === this.spatialNamespace.prefix
+      );
+      const funcPrefix = moduleVersion?.supportedSpatialFunctionPrefix.find(
         (val: any) => val.postGISName == fname
       );
       if (fname == "mod") {
@@ -151,30 +164,20 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     );
     return Object.keys(result.properties);
   }
-
-  async getResult(
-    collection: string,
-    where: string,
-    projection: string
-  ): Promise<any> {
-    if (!this.client) {
-      await this.connect();
-    }
-
+  async executeExtensionCheckQuery(collection: string): Promise<void> {
     const queryCheck = this.supportedExtensionCheck(collection);
-
     const checkPromise = new Promise((resolve, reject) => {
       this.client.query(queryCheck).results((err: any, res: any) => {
         if (res.result.length > 0) {
-          const result: any = [];
-          (res.result as any).forEach((element: any) => {
-            const doc = new dom().parseFromString(element);
-            const nodes: any = xpath.select("/*", doc);
-            result.push({
-              prefix: nodes[0].localName,
-              namespace: nodes[0].firstChild.data,
-            });
-          });
+          // console.log(res);
+
+          let result: any;
+          const doc = new dom().parseFromString(res.result[0]);
+          const nodes: any = xpath.select("/*", doc);
+          result = {
+            prefix: nodes[0].localName,
+            namespace: nodes[0].firstChild.data,
+          };
 
           resolve(result);
         } else {
@@ -186,11 +189,29 @@ class BaseXExtension extends XMLExtension<typeof basex> {
         }
       });
     });
-    const checkResult = await checkPromise;
+    const checkResult: any = await checkPromise;
+    this.spatialNamespace = checkResult;
+  }
+
+  async getResult(
+    collection: string,
+    where: string,
+    projection: string
+  ): Promise<any> {
+    if (!this.client) {
+      await this.connect();
+    }
 
     const query = new Promise((resolve, reject) => {
       this.client
-        .query(this.constructXQuery(collection, checkResult, where, projection))
+        .query(
+          this.constructXQuery(
+            collection,
+            this.spatialNamespace,
+            where,
+            projection
+          )
+        )
         .results((err: any, res: any) => {
           if (err) {
             reject(err);
@@ -199,6 +220,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
             // res.result.forEach((element: any) => {
             //   jsonResult.push(JSON.parse(element));
             // });
+            // resolve(jsonResult);
             resolve(res.result);
           }
         });
@@ -206,7 +228,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     let result: any = [];
     try {
       result = await query;
-      // console.log(result);
+      // console.log(query);
     } catch (error) {
       console.log(error);
     }
@@ -266,29 +288,6 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     let result = `geo:${funcName}(*[*/@srsName]/*) ${operator} ${constant}`;
 
     return result;
-  }
-
-  constructProjectionQuery(columns: Set<string>): string {
-    if (columns.size == 0) {
-      return "*";
-    }
-    let result = `(`;
-    const ignoreQName = "*:";
-    let arrColumns = [...columns];
-    arrColumns.forEach((column, index) => {
-      if (column == "geometry") {
-        result += `*[*/@srsName]/*`;
-      } else {
-        result += `${ignoreQName}${column}`;
-      }
-      if (index < arrColumns.length - 1) {
-        result += ` | `;
-      }
-    });
-    // for (const column of columns) {
-    //   result += `${ignoreQName}${column}`;
-    // }
-    return result + ")";
   }
 }
 export { BaseXExtension };

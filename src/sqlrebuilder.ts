@@ -174,6 +174,7 @@ function rebuildFromTree(
       type: "bool",
       value: false,
     };
+
     let selectTree: any = {
       type: "select",
       columns: tree.columns,
@@ -315,10 +316,15 @@ function rebuildFromTree(
   let rows = driver.getRowValuesRebuild(dataList, columns, mapType);
 
   if (typeof sample === "object") {
-    if (sample.hasOwnProperty("geometry")) {
+    if (
+      sample.hasOwnProperty("geometry") &&
+      !columns.some(val => val == "geometry")
+    ) {
       columns.push("geometry");
     }
   }
+  console.log(columns);
+
   selectTree.from = [
     {
       expr: {
@@ -365,11 +371,15 @@ function rebuildTree(
     const columns = mapColumnsPerTable.has(data.as)
       ? mapColumnsPerTable.get(data.as)!
       : new Set<string>();
+    // console.log(columns);
 
     const treePerFrom = rebuildFromTree(oldTree, data, columns, driver);
     newTree.from.push(treePerFrom);
   }
+  // console.log(newTree.columns);
+
   newTree.where = rebuildWhere(unsupportedClauses);
+
   return newTree;
 }
 

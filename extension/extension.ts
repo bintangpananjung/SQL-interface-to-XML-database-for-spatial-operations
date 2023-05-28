@@ -13,13 +13,16 @@ type XMLConfig = {
   //include all function that needed in building query
   version: string[];
   getDocFunc(collection: string, db_name: string, client?: any): string;
-  supportedSpatialFunctionPrefix: {
-    name: string;
-    args: number;
-    postGISName: string;
-  }[];
   getCollectionNamesFunc(db_name: string, client?: any): string;
-  getSTAsTextfunc?(node: any): string;
+  modules: {
+    supportedSpatialFunctionPrefix: {
+      name: string;
+      args: number;
+      postGISName: string;
+    }[];
+    getSTAsTextfunc?(node: any): string;
+    extension: string;
+  }[];
 };
 
 interface Supported {
@@ -34,7 +37,7 @@ interface Extension {
   extensionType: string;
 
   connect(): void;
-  constructSelectionQuery(where: any): string;
+  constructSelectionQuery(where: any): any;
   constructProjectionQuery(columns: Set<string>): string;
   getAllFields(col_name: string): Promise<string[]>;
   getResult(
@@ -59,15 +62,21 @@ interface Extension {
 
 interface XMLNamespace extends Extension {
   version: XMLConfig;
-  spatialNamespace: { prefix: string; namespace: string }[];
-  spatialModuleNamespaces: { prefix: string; namespace: string }[];
+  spatialNamespace: { prefix: string; namespace: string };
+  spatialModuleNamespaces: Array<any>;
+  supportedXMLExtensionType: string[];
+  supportedExtensionCheck(collection: string): string;
+  executeExtensionCheckQuery(collection: string): Promise<void>;
+  supportedSpatialType: string[];
   constructSpatialNamespace: (
     namespace: { prefix: string; namespace: string }[],
     module: boolean
   ) => string; //module=true-> construct module namespace
-  supportedXMLExtensionType: string[];
-  supportedExtensionCheck(collection: string): string;
-  supportedSpatialType: string[];
+  constructExtensionQuery(extension: any): {
+    path: string;
+    spatialSelectionNoCondition: string;
+    spatialSelectionWithCondition: string;
+  };
   constructXQuery(
     collection: any,
     spatialNamespace: any,

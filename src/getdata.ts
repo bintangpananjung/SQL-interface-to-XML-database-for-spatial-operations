@@ -26,8 +26,12 @@ async function getData(
     return new Promise(resolve => resolve(result));
   }
 
+  await (driver as XMLExtension<any>).executeExtensionCheckQuery(
+    collections[0].name
+  );
+
   let resultPromise: any[] = [];
-  collections.forEach(col => {
+  collections.forEach((col, idx) => {
     const { as } = col;
 
     const selectionQuery = driver.constructSelectionQuery(groupWhere[as]);
