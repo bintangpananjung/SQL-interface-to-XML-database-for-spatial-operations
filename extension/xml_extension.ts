@@ -624,7 +624,7 @@ abstract class XMLExtension<T> implements XMLNamespace {
           selection += `not(fn:exists(${access_col}${column}/text()))`;
         }
       } else if (type === "expr_list") {
-        selection += `{"properties.${column}": {"${translation}": [`;
+        selection += `${access_col}${column} ${translation} (`;
         const values = value as any[];
         const lastVal = values.pop();
         for (const val of values) {
@@ -635,9 +635,9 @@ abstract class XMLExtension<T> implements XMLNamespace {
           }
         }
         if (lastVal.type === "number") {
-          selection += `${lastVal.value}]}}`;
+          selection += `${lastVal.value})`;
         } else {
-          selection += `"${lastVal.value}"]}}`;
+          selection += `"${lastVal.value}")`;
         }
       }
 

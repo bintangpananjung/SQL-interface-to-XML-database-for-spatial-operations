@@ -25,10 +25,12 @@ async function getData(
     };
     return new Promise(resolve => resolve(result));
   }
-
-  await (driver as XMLExtension<any>).executeExtensionCheckQuery(
-    collections[0].name
-  );
+  if (driver.extensionType == "xml") {
+    await (driver as XMLExtension<any>).executeExtensionCheckQuery(
+      collections[0].name
+    );
+  }
+  console.log(collections);
 
   let resultPromise: any[] = [];
   collections.forEach((col, idx) => {
