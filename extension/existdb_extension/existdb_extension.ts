@@ -145,9 +145,9 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
   }
 
   async getResult(
-    collection: string,
-    where: string,
-    projection: string
+    collection: any[],
+    where: any[],
+    projection: any[]
   ): Promise<any> {
     if (!this.client) {
       await this.connect();

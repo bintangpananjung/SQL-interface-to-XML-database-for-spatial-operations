@@ -61,7 +61,12 @@ class CouchDbExtension extends JsonExtension<any> {
     const db = this.client.db.use(collection);
     const selector = JSON.parse(where);
     let result: any = [];
-    const recursive = async (selector: any, batchCount: number, db: any, fields: string[]) => {
+    const recursive = async (
+      selector: any,
+      batchCount: number,
+      db: any,
+      fields: string[]
+    ) => {
       let query = {
         selector,
         skip: batchCount * 25,
@@ -108,14 +113,14 @@ class CouchDbExtension extends JsonExtension<any> {
     return `{ "properties.${colname}": { "$mod": [ ${constant1}, ${constant2} ] } }`;
   }
 
-  constructProjectionQuery(columns: Set<string>): string {
+  constructProjectionQuery(columns: Set<string>, collection: string): string {
     // return JSON.stringify([]);
     const result = [];
-    for(const column of columns) {
+    for (const column of columns) {
       if (column === "geometry") {
         result.push(column);
         continue;
-      } 
+      }
       result.push(`properties.${column}`);
     }
     return JSON.stringify(result);

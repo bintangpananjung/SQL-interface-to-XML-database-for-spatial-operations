@@ -39,6 +39,7 @@ class PostgisExtension {
 
   async finalresult(tree: Select) {
     let query = this.convertToSQL(tree);
+    // console.log(JSON.stringify(tree, null, 2));
     // console.log(query);
 
     query = query.replace(/ROW/g, "");

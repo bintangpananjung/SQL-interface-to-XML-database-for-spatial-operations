@@ -344,9 +344,10 @@ function rebuildFromTree(
     as: tableas,
     lateral: false,
     columns: null,
-    join: oldFrom.join,
-    on: oldFrom.on,
+    join: oldFrom?.join,
+    on: oldFrom?.on,
   };
+  // console.log(JSON.stringify(finalResult, null, 2));
 
   return finalResult;
 }
@@ -379,6 +380,17 @@ function rebuildTree(
   // console.log(newTree.columns);
 
   newTree.where = rebuildWhere(unsupportedClauses);
+  if (driver.extensionType == "xml" && newTree.columns != "*") {
+    newTree.columns = newTree.columns.map(val => ({
+      expr: {
+        table: newTree.from![0].as,
+        type: val.expr.type,
+        column: val.expr.column,
+      },
+      as: val.as,
+    }));
+  }
+  // console.log(JSON.stringify(newTree, null, 2));
 
   return newTree;
 }

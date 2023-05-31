@@ -16,7 +16,10 @@ abstract class JsonExtension<T> implements Extension {
   abstract standardizeData(data: any): GeoJSON[];
   abstract getCollectionsName(): Promise<string[]>;
   abstract constructFunctionQuery(clause: any): string;
-  abstract constructProjectionQuery(columns: Set<string>): string;
+  abstract constructProjectionQuery(
+    columns: Set<string>,
+    collection: string
+  ): string;
   abstract supportedFunctions: RegExp[];
 
   extensionType = "json";

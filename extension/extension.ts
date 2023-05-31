@@ -38,12 +38,12 @@ interface Extension {
 
   connect(): void;
   constructSelectionQuery(where: any): any;
-  constructProjectionQuery(columns: Set<string>): string;
+  constructProjectionQuery(columns: Set<string>, collection: any): string;
   getAllFields(col_name: string): Promise<string[]>;
   getResult(
-    collection: string,
-    where: string,
-    projection: string
+    collection: string | any[],
+    where: string | any[],
+    projection: string | any[]
   ): Promise<any>;
   getDbName(): string;
   standardizeData(data: any): any[];
@@ -72,11 +72,20 @@ interface XMLNamespace extends Extension {
     namespace: { prefix: string; namespace: string }[],
     module: boolean
   ) => string; //module=true-> construct module namespace
-  constructExtensionQuery(extension: any): {
+  constructExtensionQuery(
+    extension: any,
+    varName: string
+  ): {
     path: string;
     spatialSelectionNoCondition: string;
     spatialSelectionWithCondition: string;
   };
+  // constructJoinQuery(
+  //   type: "inner" | "left" | "right" | "full" | "natural",
+  //   collection: Array<any>,
+  //   where: Array<any>,
+  //   projection: Array<any>
+  // ): string;
   constructXQuery(
     collection: any,
     spatialNamespace: any,

@@ -128,7 +128,7 @@ class MongoExtension extends JsonExtension<MongoClient> {
     return result + "}}}";
   }
 
-  constructProjectionQuery(columns: Set<string>): string {
+  constructProjectionQuery(columns: Set<string>, collection: string): string {
     if (columns.size == 0) {
       return "{}";
     }

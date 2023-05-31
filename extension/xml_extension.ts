@@ -18,9 +18,9 @@ abstract class XMLExtension<T> implements XMLNamespace {
   abstract connect(): void;
   abstract getAllFields(col_name: string): Promise<string[]>;
   abstract getResult(
-    collection: string,
-    where: string,
-    projection: string
+    collection: string | any[],
+    where: string | any[],
+    projection: string | any[]
   ): Promise<any>;
   abstract getDbName(): string;
   abstract standardizeData(data: any): XMLDocument[];
@@ -224,6 +224,7 @@ abstract class XMLExtension<T> implements XMLNamespace {
         }
       });
     }
+    // columns = [...new Set(columns)];
     return { columns, mapType };
   }
   addSelectTreeColumnsRebuild(sample: any, listColumns: any[]) {
@@ -417,7 +418,10 @@ abstract class XMLExtension<T> implements XMLNamespace {
     }
     return result;
   }
-  constructExtensionQuery(extension: any): {
+  constructExtensionQuery(
+    extension: any,
+    varName: string
+  ): {
     path: string;
     spatialSelectionNoCondition: string;
     spatialSelectionWithCondition: string;
@@ -430,8 +434,8 @@ abstract class XMLExtension<T> implements XMLNamespace {
     switch (extension) {
       case "gml":
         result.path = "gml:featureMember/*";
-        result.spatialSelectionWithCondition = `boolean($j/@srsName)`;
-        result.spatialSelectionNoCondition = `boolean($j/*/@srsName)`;
+        result.spatialSelectionWithCondition = `boolean($${varName}j/@srsName)`;
+        result.spatialSelectionNoCondition = `boolean($${varName}j/*/@srsName)`;
         break;
       case "kml":
         result.path = "kml:Placemark";
@@ -443,12 +447,68 @@ abstract class XMLExtension<T> implements XMLNamespace {
     }
     return result;
   }
+  // constructJoinQuery(type: "inner" | "left" | "right" | "full" | "natural", collection: any[], where: any[], projection: any[]): string {
+
+  // }
+
   constructXQuery = (
-    collection: any,
+    collection: any[],
     spatialNamespace: any,
-    where: any,
-    projection: any
+    where: any[],
+    projection: any[]
   ) => {
+    const recursion = (join: any, depth: number): string => {
+      let joinOnQuery = "";
+      if (join.left == null || join.right == null) {
+        return "";
+      }
+      const { left, right } = join;
+
+      let resultLeft = recursion(join.left, depth + 1);
+      let resultRight = recursion(join.right, depth + 1);
+
+      // if case != and or
+      if (join.operator == "AND") {
+        const { translation } = this.supportedOperators.find(
+          ({ origin }) => origin === join.operator
+        ) as Supported;
+        joinOnQuery += `${resultLeft}${translation} ${resultRight}`;
+        return joinOnQuery;
+      }
+
+      const as = this.supportedOperators.find(
+        ({ origin }) => origin === join.operator
+      ) as Supported;
+      const { translation } = this.supportedOperators.find(
+        ({ origin }) => origin === join.operator
+      ) as Supported;
+      const access_col = "*:";
+
+      const constructColumnOn = (column: string) => {
+        let columnOn = "";
+        if (column.includes("_attribute__")) {
+          let columnAttr = column.split("__");
+          if (columnAttr.length == 2) {
+            columnOn += `@${columnAttr[1]}/data()`;
+          }
+          if (columnAttr.length == 3) {
+            columnOn += `${access_col}${columnAttr[1]}/@${columnAttr[2]}/data()`;
+          }
+        } else {
+          columnOn += `${access_col}${column}/text()`;
+        }
+        return columnOn;
+      };
+
+      if (right.type === "column_ref") {
+        joinOnQuery += `$${left.table}i/${constructColumnOn(
+          left.column
+        )} ${translation} $${right.table}i/${constructColumnOn(right.column)} `;
+      }
+
+      return joinOnQuery;
+    };
+
     const namespaces = this.constructSpatialNamespace(
       [spatialNamespace],
       false
@@ -464,75 +524,174 @@ abstract class XMLExtension<T> implements XMLNamespace {
       modules ? modules.modules : [],
       true
     );
-    let whereQuery = "";
-    if (where.length > 0) {
-      whereQuery = `[${where}]`;
-    }
-    const extensionQuery = this.constructExtensionQuery(
-      spatialNamespace.prefix
-    );
-    return (
-      namespaces +
-      moduleNamespaces +
-      `for $i in ${this.version.getDocFunc(collection, this.db_name)}//${
-        extensionQuery.path
-      }${whereQuery}
+    let result = namespaces + moduleNamespaces;
+    // console.log(collection);
+
+    if (collection.length > 1 && where.length > 1 && projection.length > 1) {
+      const joinType = collection[1].join;
+      // console.log(collection[1].on);
+
+      const joinOn = recursion(collection[1].on, 0);
+      if (joinType == "INNER JOIN") {
+        result += `for`;
+        collection.forEach((element, idx) => {
+          const extensionQuery = this.constructExtensionQuery(
+            spatialNamespace.prefix,
+            element.name
+          );
+          result += ` $${element.name}i in ${this.version.getDocFunc(
+            element.name,
+            this.db_name
+          )}//${extensionQuery.path}${
+            where[idx].length > 0 ? `[${where[idx]}]` : ""
+          }`;
+          if (idx < collection.length - 1) {
+            result += `,`;
+          }
+        });
+        result += ` let $element := element {'result'}{(`;
+        collection.forEach((element, idx) => {
+          const extensionQuery = this.constructExtensionQuery(
+            spatialNamespace.prefix,
+            element.name
+          );
+          result += `for $${element.name}j in $${element.name}i/${
+            projection[idx].projection
+          }
+          return
+          if(${extensionQuery.spatialSelectionNoCondition}) then (
+          element {'geometry'} {${
+            moduleVersion?.getSTAsTextfunc
+              ? moduleVersion.getSTAsTextfunc(`$${element.name}j/*`)
+              : `$${element.name}j/*`
+          }}
+          )
+          else if(${extensionQuery.spatialSelectionWithCondition}) then(
+            element {'geometry'} {${
+              moduleVersion?.getSTAsTextfunc
+                ? moduleVersion.getSTAsTextfunc(`$${element.name}j`)
+                : `$${element.name}j`
+            }}
+          )
+          else (
+            if($${element.name}j/data()='' or fn:exists($${
+            element.name
+          }j/text()))
+            then(
+            for $${element.name}k in ${projection[idx].childProjection}
+            return element {if($${element.name}k/data()='' or fn:exists($${
+            element.name
+          }k/text())) then($${
+            element.name
+          }k/local-name()) else(concat('_attribute__',$${
+            element.name
+          }j/local-name(),'__',$${element.name}k/local-name()))}{if($${
+            element.name
+          }k/data()='' or fn:exists($${element.name}k/text())) then($${
+            element.name
+          }k/text()) else($${element.name}k/data())}
+            )
+            else(
+              element {concat('_attribute__',$${
+                element.name
+              }j/local-name())}{$${element.name}j/data()}
+            )
+          )`;
+          if (idx < collection.length - 1) {
+            result += ", ";
+          }
+        });
+        result += `)}`;
+        result += ` where ${joinOn}`;
+        result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
+      }
+    } else {
+      const extensionQuery = this.constructExtensionQuery(
+        spatialNamespace.prefix,
+        collection[0].name
+      );
+      let whereQuery = "";
+      if (where[0].length > 0) {
+        whereQuery = `[${where[0]}]`;
+      }
+
+      result += `for $${collection[0].name}i in ${this.version.getDocFunc(
+        collection[0].name,
+        this.db_name
+      )}//${extensionQuery.path}${whereQuery}
       return element {'result'}
-      { $i/@*,
-        for $j in $i/${projection.projection}
+      { 
+        for $${collection[0].name}j in $${collection[0].name}i/${
+        projection[0].projection
+      }
         return
         if(${extensionQuery.spatialSelectionNoCondition}) then (
         element {'geometry'} {${
           moduleVersion?.getSTAsTextfunc
-            ? moduleVersion.getSTAsTextfunc("$j/*")
-            : "$j/*"
+            ? moduleVersion.getSTAsTextfunc(`$${collection[0].name}j/*`)
+            : `$${collection[0].name}j/*`
         }}
         )
         else if(${extensionQuery.spatialSelectionWithCondition}) then(
           element {'geometry'} {${
             moduleVersion?.getSTAsTextfunc
-              ? moduleVersion.getSTAsTextfunc("$j")
-              : "$j"
+              ? moduleVersion.getSTAsTextfunc(`$${collection[0].name}j`)
+              : `$${collection[0].name}j`
           }}
         )
         else (
-          if($j/data()='' or fn:exists($j/text()))
+          if($${collection[0].name}j/data()='' or fn:exists($${
+        collection[0].name
+      }j/text()))
           then(
-          for $k in ${projection.childProjection}
-          return element {if($k/data()='' or fn:exists($k/text())) then($k/local-name()) else(concat('_attribute__',$j/local-name(),'__',$k/local-name()))}{if($k/data()='' or fn:exists($k/text())) then($k/text()) else($k/data())}
+          for $${collection[0].name}k in ${projection[0].childProjection}
+          return element {if($${collection[0].name}k/data()='' or fn:exists($${
+        collection[0].name
+      }k/text())) then($${
+        collection[0].name
+      }k/local-name()) else(concat('_attribute__',$${
+        collection[0].name
+      }j/local-name(),'__',$${collection[0].name}k/local-name()))}{if($${
+        collection[0].name
+      }k/data()='' or fn:exists($${collection[0].name}k/text())) then($${
+        collection[0].name
+      }k/text()) else($${collection[0].name}k/data())}
           )
           else(
-            element {concat('_attribute__',$j/local-name())}{$j/data()}
+            element {concat('_attribute__',$${
+              collection[0].name
+            }j/local-name())}{$${collection[0].name}j/data()}
           )
         )
-      }`
-      // `for $i in ${this.version.getDocFunc(
-      //   collection,
-      //   this.db_name
-      // )}//gml:featureMember/*${whereQuery}
-      // return json:serialize(element {'json'}
-      // { attribute {'objects'}{'json'},
-      //   for $j in $i/${projection}
-      //   return
-      //   if(boolean($j/*/@srsName)) then (
-      //   element {'geometry'} {${
-      //     this.version.getSTAsTextfunc
-      //       ? this.version.getSTAsTextfunc("$j/*")
-      //       : "$j/*"
-      //   }}
-      //   )
-      //   else if(boolean($j/@srsName)) then(
-      //     element {'geometry'} {${
-      //       this.version.getSTAsTextfunc
-      //         ? this.version.getSTAsTextfunc("$j")
-      //         : "$j"
-      //     }}
-      //   )
-      //   else (
-      //       element {$j/local-name()}{if(fn:exists($j/text())) then($j/text()) else($j/data())}
-      //   )
-      // })`
-    );
+      }`;
+    }
+    return result;
+    // `for $i in ${this.version.getDocFunc(
+    //   collection,
+    //   this.db_name
+    // )}//gml:featureMember/*${whereQuery}
+    // return json:serialize(element {'json'}
+    // { attribute {'objects'}{'json'},
+    //   for $j in $i/${projection}
+    //   return
+    //   if(boolean($j/*/@srsName)) then (
+    //   element {'geometry'} {${
+    //     this.version.getSTAsTextfunc
+    //       ? this.version.getSTAsTextfunc("$j/*")
+    //       : "$j/*"
+    //   }}
+    //   )
+    //   else if(boolean($j/@srsName)) then(
+    //     element {'geometry'} {${
+    //       this.version.getSTAsTextfunc
+    //         ? this.version.getSTAsTextfunc("$j")
+    //         : "$j"
+    //     }}
+    //   )
+    //   else (
+    //       element {$j/local-name()}{if(fn:exists($j/text())) then($j/text()) else($j/data())}
+    //   )
+    // })`
   };
 
   constructSelectionQuery(where: any): string {
@@ -570,20 +729,6 @@ abstract class XMLExtension<T> implements XMLNamespace {
 
       // if case != and or
       if (conditionalOperators.includes(where.operator)) {
-        // const { left, right } = where;
-        // if (left.operator == "AND" || left.operator == "OR") {
-        //   const { translation } = this.supportedOperators.find(
-        //     ({ origin }) => origin === left.operator
-        //   ) as Supported;
-        //   resultLeft = ` ${translation} ${resultLeft}`;
-        // }
-        // if (right.operator == "AND" || right.operator == "OR") {
-        //   const { translation } = this.supportedOperators.find(
-        //     ({ origin }) => origin === right.operator
-        //   ) as Supported;
-        //   resultRight = `${resultRight}${translation}`;
-        // }
-        // selection += resultLeft + resultRight;
         const { translation } = this.supportedOperators.find(
           ({ origin }) => origin === where.operator
         ) as Supported;
@@ -649,12 +794,17 @@ abstract class XMLExtension<T> implements XMLNamespace {
 
     return selection;
   }
-  constructProjectionQuery(columns: Set<string>): any {
+  constructProjectionQuery(columns: Set<string>, collection: any): any {
+    // console.log(columns);
+
     if (columns.size == 0) {
-      return { projection: "(*|@*)", childProjection: `($j|$j/@*)` };
+      return {
+        projection: "(*|@*)",
+        childProjection: `($${collection.name}j|$${collection.name}j/@*)`,
+      };
     }
     let result = `(`;
-    let childResult = `($j`;
+    let childResult = `($${collection.name}j`;
     const ignoreQName = "*:";
     let arrColumns = [...columns];
     arrColumns.forEach((column, index) => {
@@ -677,7 +827,7 @@ abstract class XMLExtension<T> implements XMLNamespace {
             if (index == 0) {
               childResult += "|";
             }
-            childResult += `$j[local-name()='${columnAttr[1]}']/@${columnAttr[2]}`;
+            childResult += `$${collection.name}j[local-name()='${columnAttr[1]}']/@${columnAttr[2]}`;
           }
         } else {
           result += `${ignoreQName}${column}`;
