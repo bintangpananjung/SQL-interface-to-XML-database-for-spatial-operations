@@ -147,7 +147,8 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
   async getResult(
     collection: any[],
     where: any[],
-    projection: any[]
+    projection: any[],
+    columnAs: any[]
   ): Promise<any> {
     if (!this.client) {
       await this.connect();
@@ -159,12 +160,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
 
     try {
       const query = await this.client.queries.read(
-        this.constructXQuery(
-          collection,
-          this.spatialNamespace,
-          where,
-          projection
-        ),
+        this.constructXQuery(collection, where, projection, columnAs),
         {
           "omit-xml-declaration": "no",
           "insert-final-newline": "yes",

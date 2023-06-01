@@ -1,4 +1,4 @@
-import { From, Select } from "flora-sql-parser";
+import { Column, ColumnRef, From, Select } from "flora-sql-parser";
 import { Extension } from "../extension/extension";
 import { XMLExtension } from "../extension/xml_extension";
 
@@ -20,6 +20,24 @@ async function getData(
       };
     }) as { name: string; as: string }[];
 
+  let columnAs: any = tree.columns;
+  if (tree.columns != "*") {
+    columnAs = new Map<string, Array<any>>();
+    tree.columns.forEach((val: Column) => {
+      if (val.expr.type == "column_ref") {
+        const table = tree.from?.find(
+          el => el.as == (val.expr as ColumnRef).table
+        ).table;
+        if (!columnAs.has(table)) {
+          columnAs.set(table, []);
+        }
+        columnAs.get(table)!.push({ as: val.as, column: val.expr.column });
+      }
+    });
+  }
+
+  // console.log(columnAs);
+
   if (collections.length == 0) {
     const result = {
       finalResult: [],
@@ -27,6 +45,7 @@ async function getData(
     };
     return new Promise(resolve => resolve(result));
   }
+
   let resultPromise: any[] = [];
   if (driver.extensionType == "xml") {
     await (driver as XMLExtension<any>).executeExtensionCheckQuery(
@@ -41,8 +60,6 @@ async function getData(
   // }
 
   collections.forEach((col, idx) => {
-    // console.log(col);
-
     const { as } = col;
 
     const selectionQuery = driver.constructSelectionQuery(groupWhere[as]);
@@ -69,7 +86,8 @@ async function getData(
     const result = driver.getResult(
       collections,
       selectionQueryList,
-      projectionQueryList
+      projectionQueryList,
+      columnAs
     );
     resultPromise.push(result);
   }

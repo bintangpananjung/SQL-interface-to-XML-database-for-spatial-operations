@@ -43,7 +43,8 @@ interface Extension {
   getResult(
     collection: string | any[],
     where: string | any[],
-    projection: string | any[]
+    projection: string | any[],
+    columnAs?: any | undefined
   ): Promise<any>;
   getDbName(): string;
   standardizeData(data: any): any[];

@@ -196,25 +196,17 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   async getResult(
     collection: any[],
     where: any[],
-    projection: any[]
+    projection: any[],
+    columnAs?: any
   ): Promise<any> {
     if (!this.client) {
       await this.connect();
     }
-    // console.log(
-    //   this.constructXQuery(collection, this.spatialNamespace, where, projection)
-    // );
+    // console.log(this.constructXQuery(collection, where, projection, columnAs));
 
     const query = new Promise((resolve, reject) => {
       this.client
-        .query(
-          this.constructXQuery(
-            collection,
-            this.spatialNamespace,
-            where,
-            projection
-          )
-        )
+        .query(this.constructXQuery(collection, where, projection, columnAs))
         .results((err: any, res: any) => {
           if (err) {
             reject(err);
@@ -231,7 +223,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     let result: any = [];
     try {
       result = await query;
-      console.log(result);
+      // console.log(result);
     } catch (error) {
       console.log(error);
     }

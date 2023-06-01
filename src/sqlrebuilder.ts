@@ -323,7 +323,7 @@ function rebuildFromTree(
       columns.push("geometry");
     }
   }
-  console.log(columns);
+  // console.log(columns);
 
   selectTree.from = [
     {
@@ -377,22 +377,42 @@ function rebuildTree(
     const treePerFrom = rebuildFromTree(oldTree, data, columns, driver);
     newTree.from.push(treePerFrom);
   }
-  // console.log(newTree.columns);
 
   newTree.where = rebuildWhere(unsupportedClauses);
   if (driver.extensionType == "xml" && newTree.columns != "*") {
+    const joined = isJoined(oldTree);
+    // console.log(joined);
+
     newTree.columns = newTree.columns.map(val => ({
       expr: {
         table: newTree.from![0].as,
         type: val.expr.type,
-        column: val.expr.column,
+        column: joined ? val.as : val.expr.column,
       },
-      as: val.as,
+      as: val.as ? val.as : val.expr.column,
     }));
   }
   // console.log(JSON.stringify(newTree, null, 2));
 
   return newTree;
+}
+
+function isJoined(oldTree: Select) {
+  let joined = false;
+  console.log(oldTree.from);
+
+  if (oldTree.from && Array.isArray(oldTree.from)) {
+    oldTree.from.forEach(element => {
+      console.log(element);
+
+      if (element.join && element.on) {
+        joined = true;
+        return;
+      }
+    });
+  }
+
+  return joined;
 }
 
 export { rebuildWhere, rebuildTree, rebuildFromTree, doubleTheQuote };

@@ -20,7 +20,8 @@ abstract class XMLExtension<T> implements XMLNamespace {
   abstract getResult(
     collection: string | any[],
     where: string | any[],
-    projection: string | any[]
+    projection: string | any[],
+    columnAs?: any | undefined
   ): Promise<any>;
   abstract getDbName(): string;
   abstract standardizeData(data: any): XMLDocument[];
@@ -453,9 +454,9 @@ abstract class XMLExtension<T> implements XMLNamespace {
 
   constructXQuery = (
     collection: any[],
-    spatialNamespace: any,
     where: any[],
-    projection: any[]
+    projection: any[],
+    columnAs: any
   ) => {
     const recursion = (join: any, depth: number): string => {
       let joinOnQuery = "";
@@ -510,7 +511,7 @@ abstract class XMLExtension<T> implements XMLNamespace {
     };
 
     const namespaces = this.constructSpatialNamespace(
-      [spatialNamespace],
+      [this.spatialNamespace],
       false
     );
     const moduleVersion = this.version.modules.find(
@@ -532,11 +533,61 @@ abstract class XMLExtension<T> implements XMLNamespace {
       // console.log(collection[1].on);
 
       const joinOn = recursion(collection[1].on, 0);
+      const constructTableQuery = (result: string) => {
+        collection.forEach((element, idx) => {
+          const extensionQuery = this.constructExtensionQuery(
+            this.spatialNamespace.prefix,
+            element.name
+          );
+          result += `let $element${element.name} := `;
+          result += `for $${element.name}j in $${element.name}i/${
+            projection[idx].projection
+          }
+        return
+        if(${extensionQuery.spatialSelectionNoCondition}) then (
+        element {'geometry'} {${
+          moduleVersion?.getSTAsTextfunc
+            ? moduleVersion.getSTAsTextfunc(`$${element.name}j/*`)
+            : `$${element.name}j/*`
+        }}
+        )
+        else if(${extensionQuery.spatialSelectionWithCondition}) then(
+          element {'geometry'} {${
+            moduleVersion?.getSTAsTextfunc
+              ? moduleVersion.getSTAsTextfunc(`$${element.name}j`)
+              : `$${element.name}j`
+          }}
+        )
+        else (
+          if($${element.name}j/data()='' or fn:exists($${element.name}j/text()))
+          then(
+          for $${element.name}k in ${projection[idx].childProjection}
+          return element {if($${element.name}k/data()='' or fn:exists($${
+            element.name
+          }k/text())) then($${
+            element.name
+          }k/local-name()) else(concat('_attribute__',$${
+            element.name
+          }j/local-name(),'__',$${element.name}k/local-name()))}{if($${
+            element.name
+          }k/data()='' or fn:exists($${element.name}k/text())) then($${
+            element.name
+          }k/text()) else($${element.name}k/data())}
+          )
+          else(
+            element {concat('_attribute__',$${element.name}j/local-name())}{$${
+            element.name
+          }j/data()}
+          )
+        ) `;
+        });
+        return result;
+      };
       if (joinType == "INNER JOIN") {
         result += `for`;
         collection.forEach((element, idx) => {
           const extensionQuery = this.constructExtensionQuery(
-            spatialNamespace.prefix,
+            this.spatialNamespace.prefix,
             element.name
           );
           result += ` $${element.name}i in ${this.version.getDocFunc(
@@ -549,65 +600,53 @@ abstract class XMLExtension<T> implements XMLNamespace {
             result += `,`;
           }
         });
-        result += ` let $element := element {'result'}{(`;
-        collection.forEach((element, idx) => {
-          const extensionQuery = this.constructExtensionQuery(
-            spatialNamespace.prefix,
-            element.name
-          );
-          result += `for $${element.name}j in $${element.name}i/${
-            projection[idx].projection
+        if (columnAs) {
+          if (columnAs == "*") {
+            result = constructTableQuery(result);
+            result += ` let $element := element {'result'}{(`;
+            collection.forEach((val, idx) => {
+              result += `$element${val.name}`;
+              if (idx < collection.length - 1) {
+                result += `,`;
+              }
+            });
+            result += `)}`;
+            result += ` where ${joinOn}`;
+            result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
+          } else {
+            const columnAsArray = Array.from(columnAs, ([table, col]) => ({
+              table,
+              col,
+            }));
+
+            columnAsArray.forEach((element, index) => {
+              result += ` let $mapColumn${index} := map {`;
+              // const columns = columnAs.get(key);
+
+              element.col.forEach((val: any, idxcol: any) => {
+                result += `'${val.column}' := '${val.as}'`;
+                if (idxcol < element.col.length - 1) {
+                  result += ",";
+                }
+              });
+              result += `} `;
+            });
+            result = constructTableQuery(result);
+            result += ` where ${joinOn}`;
+            result += ` return element{'result'}{(`;
+            columnAsArray.forEach((element, idx) => {
+              result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${element.table}[local-name()=$col${idx}]/text()}`;
+              if (idx < columnAsArray.length - 1) {
+                result += ",";
+              }
+            });
+            result += `)}`;
           }
-          return
-          if(${extensionQuery.spatialSelectionNoCondition}) then (
-          element {'geometry'} {${
-            moduleVersion?.getSTAsTextfunc
-              ? moduleVersion.getSTAsTextfunc(`$${element.name}j/*`)
-              : `$${element.name}j/*`
-          }}
-          )
-          else if(${extensionQuery.spatialSelectionWithCondition}) then(
-            element {'geometry'} {${
-              moduleVersion?.getSTAsTextfunc
-                ? moduleVersion.getSTAsTextfunc(`$${element.name}j`)
-                : `$${element.name}j`
-            }}
-          )
-          else (
-            if($${element.name}j/data()='' or fn:exists($${
-            element.name
-          }j/text()))
-            then(
-            for $${element.name}k in ${projection[idx].childProjection}
-            return element {if($${element.name}k/data()='' or fn:exists($${
-            element.name
-          }k/text())) then($${
-            element.name
-          }k/local-name()) else(concat('_attribute__',$${
-            element.name
-          }j/local-name(),'__',$${element.name}k/local-name()))}{if($${
-            element.name
-          }k/data()='' or fn:exists($${element.name}k/text())) then($${
-            element.name
-          }k/text()) else($${element.name}k/data())}
-            )
-            else(
-              element {concat('_attribute__',$${
-                element.name
-              }j/local-name())}{$${element.name}j/data()}
-            )
-          )`;
-          if (idx < collection.length - 1) {
-            result += ", ";
-          }
-        });
-        result += `)}`;
-        result += ` where ${joinOn}`;
-        result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
+        }
       }
     } else {
       const extensionQuery = this.constructExtensionQuery(
-        spatialNamespace.prefix,
+        this.spatialNamespace.prefix,
         collection[0].name
       );
       let whereQuery = "";
