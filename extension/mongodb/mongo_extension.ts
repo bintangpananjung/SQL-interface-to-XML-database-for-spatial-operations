@@ -4,6 +4,7 @@ import { Column } from "flora-sql-parser";
 import { GeoJSON } from "../extension";
 
 class MongoExtension extends JsonExtension<MongoClient> {
+  supportPreExecutionQuery: boolean = false;
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
     for (const pattern of this.supportedFunctions) {

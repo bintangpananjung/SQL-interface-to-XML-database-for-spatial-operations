@@ -7,6 +7,7 @@ import * as xpath from "xpath-ts";
 const existdb = require("@existdb/node-exist");
 
 class ExistDBExtension extends XMLExtension<typeof existdb> {
+  supportPreExecutionQuery: boolean = true;
   version: XMLConfig;
   supportedXMLExtensionType = ["gml"];
   spatialModuleNamespaces = [];
@@ -121,7 +122,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     );
     return Object.keys(result.properties);
   }
-  async executeExtensionCheckQuery(collection: string): Promise<void> {
+  async executePreExecutionQuery(collection: string): Promise<void> {
     const queryCheck = this.supportedExtensionCheck(collection);
 
     const queryChecked = await this.client.queries.read(queryCheck, {

@@ -5,6 +5,7 @@ import { Extension, GeoJSON, Supported } from "./extension";
 import { doubleTheQuote } from "../src/sqlrebuilder";
 
 abstract class JsonExtension<T> implements Extension {
+  abstract supportPreExecutionQuery: boolean;
   abstract connect(): void;
   abstract getAllFields(col_name: string): Promise<string[]>;
   abstract getResult(
@@ -161,7 +162,7 @@ abstract class JsonExtension<T> implements Extension {
     return { columns, mapType };
   }
 
-  getRowValuesRebuild(dataList: any[], columns: any[], mapType: any) {
+  addRowValuesRebuild(dataList: any[], columns: any[], mapType: any) {
     let rows: any[] = [];
     for (const data of dataList) {
       let row: any = {

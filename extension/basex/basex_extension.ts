@@ -9,6 +9,7 @@ var basex = require("basex");
 
 class BaseXExtension extends XMLExtension<typeof basex> {
   version: XMLConfig;
+  supportPreExecutionQuery: boolean = true;
   spatialNamespace: { prefix: string; namespace: string };
   moduleConfig: XMLConfig[] = [
     {
@@ -42,14 +43,23 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     },
   ];
   supportedSpatialType = [
-    "MultiPoint",
-    "Point",
-    "LineString",
-    "LinearRing",
-    "Polygon",
-    "MultiLineString",
-    "MultiPolygon",
-    "MultiGeometry",
+    {
+      types: [
+        "MultiPoint",
+        "Point",
+        "LineString",
+        "LinearRing",
+        "Polygon",
+        "MultiLineString",
+        "MultiPolygon",
+        "MultiGeometry",
+      ],
+      extType: "gml",
+    },
+    {
+      types: ["Point", "LineString", "Polygon", "MultiGeometry"],
+      extType: "kml",
+    },
   ];
 
   supportedFunctions = [
@@ -164,7 +174,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     );
     return Object.keys(result.properties);
   }
-  async executeExtensionCheckQuery(collection: string): Promise<void> {
+  async executePreExecutionQuery(collection: string): Promise<void> {
     const queryCheck = this.supportedExtensionCheck(collection);
     const checkPromise = new Promise((resolve, reject) => {
       this.client.query(queryCheck).results((err: any, res: any) => {

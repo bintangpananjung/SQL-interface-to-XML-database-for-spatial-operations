@@ -6,7 +6,8 @@ import { rebuildWhere } from "./sqlrebuilder";
 
 function filterWhereStatement(
   tree: Select,
-  driver: Extension
+  driver: Extension,
+  canJoin: boolean
 ): { supportedClauses: any; unsupportedClauses: any[] } {
   let supportedClauses: any = {};
   let unsupportedClauses: any[] = [];

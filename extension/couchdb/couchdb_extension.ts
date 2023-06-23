@@ -6,6 +6,7 @@ import { GeoJSON } from "../extension";
 import { AutoEncryptionExtraOptions } from "mongodb";
 
 class CouchDbExtension extends JsonExtension<any> {
+  supportPreExecutionQuery: boolean = false;
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
     for (const pattern of this.supportedFunctions) {

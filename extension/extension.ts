@@ -35,10 +35,12 @@ interface Extension {
   supportedFunctions: RegExp[];
   supportedOperators: Supported[];
   extensionType: string;
+  supportPreExecutionQuery: boolean;
 
   connect(): void;
   constructSelectionQuery(where: any): any;
   constructProjectionQuery(columns: Set<string>, collection: any): string;
+  executePreExecutionQuery?(collection: string): Promise<void>;
   getAllFields(col_name: string): Promise<string[]>;
   getResult(
     collection: string | any[],
@@ -58,24 +60,25 @@ interface Extension {
     columns: any[];
     mapType: any;
   };
-  getRowValuesRebuild(dataList: any[], columns: any[], mapType: any): any[];
+  addRowValuesRebuild(dataList: any[], columns: any[], mapType: any): any[];
 }
 
-interface XMLNamespace extends Extension {
+interface XMLInterface extends Extension {
   version: XMLConfig;
   spatialNamespace: { prefix: string; namespace: string };
   spatialModuleNamespaces: Array<any>;
   supportedXMLExtensionType: string[];
+  supportedSpatialType: { extType: string; types: string[] }[];
   supportedExtensionCheck(collection: string): string;
-  executeExtensionCheckQuery(collection: string): Promise<void>;
-  supportedSpatialType: string[];
+  // executeExtensionCheckQuery(collection: string): Promise<void>;
   constructSpatialNamespace: (
     namespace: { prefix: string; namespace: string }[],
     module: boolean
   ) => string; //module=true-> construct module namespace
   constructExtensionQuery(
     extension: any,
-    varName: string
+    varName: string,
+    subVarName: string
   ): {
     path: string;
     spatialSelectionNoCondition: string;
@@ -96,4 +99,4 @@ interface XMLNamespace extends Extension {
   moduleConfig: XMLConfig[];
   initVersion(): any;
 }
-export { Extension, Supported, GeoJSON, XMLNamespace, GML, XMLConfig };
+export { Extension, Supported, GeoJSON, XMLInterface, GML, XMLConfig };

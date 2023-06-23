@@ -6,20 +6,9 @@ async function getData(
   tree: Select,
   groupWhere: any,
   driver: Extension,
-  mapColumnsPerTable: Map<string, Set<string>>
+  mapColumnsPerTable: Map<string, Set<string>>,
+  collections: Array<any>
 ): Promise<any> {
-  const collections = tree
-    .from!.filter(val => !val.expr)
-    .map(val => {
-      const from = val as From;
-      return {
-        name: from.table,
-        as: from.as as string,
-        join: (from as any).join,
-        on: (from as any).on,
-      };
-    }) as { name: string; as: string }[];
-
   let columnAs: any = tree.columns;
   if (tree.columns != "*") {
     columnAs = new Map<string, Array<any>>();
@@ -31,7 +20,10 @@ async function getData(
         if (!columnAs.has(table)) {
           columnAs.set(table, []);
         }
-        columnAs.get(table)!.push({ as: val.as, column: val.expr.column });
+        columnAs.get(table)!.push({
+          as: val.as ? val.as : val.expr.column,
+          column: val.expr.column,
+        });
       }
     });
   }
@@ -47,17 +39,12 @@ async function getData(
   }
 
   let resultPromise: any[] = [];
-  if (driver.extensionType == "xml") {
-    await (driver as XMLExtension<any>).executeExtensionCheckQuery(
-      collections[0].name
-    );
+  if (driver.supportPreExecutionQuery) {
+    await driver.executePreExecutionQuery!(collections[0].name);
   }
-  // console.log(collections);
+  // console.log(groupWhere);
   let selectionQueryList: any[] = [];
   let projectionQueryList: any[] = [];
-  // for (const [key, value] of mapColumnsPerTable) {
-  //   console.log(key, value);
-  // }
 
   collections.forEach((col, idx) => {
     const { as } = col;
@@ -124,7 +111,7 @@ async function getData(
     }
     totalData += result.length;
   }
-  // console.log(finalResult);
+  // console.log(finalResult[0].table, finalResult[0].as);
 
   return { finalResult, totalData };
 }

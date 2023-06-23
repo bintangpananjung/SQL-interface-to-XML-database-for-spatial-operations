@@ -1,4 +1,4 @@
-import { util, Parser, Select } from "flora-sql-parser";
+import { util, Parser, Select, From } from "flora-sql-parser";
 import _, { cond, find, map } from "lodash";
 import { Extension } from "../extension/extension";
 import Pool from "../pg-db";
@@ -40,7 +40,7 @@ class PostgisExtension {
   async finalresult(tree: Select) {
     let query = this.convertToSQL(tree);
     // console.log(JSON.stringify(tree, null, 2));
-    // console.log(query);
+    console.log(query);
 
     query = query.replace(/ROW/g, "");
     let pgclient = await Pool.connect();
@@ -174,11 +174,25 @@ class PostgisExtension {
 
     tree = await this.processSubQueryFrom(tree);
     tree = await this.processSubQueryWhere(tree);
+    const collections = tree
+      .from!.filter(val => !val.expr)
+      .map(val => {
+        const from = val as From;
+        return {
+          name: from.table,
+          as: from.as as string,
+          join: (from as any).join,
+          on: (from as any).on,
+        };
+      }) as { name: string; as: string }[];
 
     const { supportedClauses, unsupportedClauses } = filterWhereStatement(
       tree,
-      this.driver
+      this.driver,
+      this.driver.extensionType == "xml" && collections.length > 1
     );
+    console.log(unsupportedClauses, "unsup", supportedClauses, "sup");
+
     const mapColumnsPerTable = this.getColumns(tree, unsupportedClauses);
     // console.log(supportedClauses, unsupportedClauses, "unsu");
 
@@ -186,7 +200,8 @@ class PostgisExtension {
       tree,
       supportedClauses,
       this.driver,
-      mapColumnsPerTable
+      mapColumnsPerTable,
+      collections
     );
     this.totalData += totalData;
     // console.log(totalData);

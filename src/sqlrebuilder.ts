@@ -1,8 +1,10 @@
 import { Column, ColumnRef, Select, util } from "flora-sql-parser";
-import _ from "lodash";
+import _, { join } from "lodash";
 import { Extension } from "../extension/extension";
 
 function rebuildWhere(clauses: any[]) {
+  // console.log(clauses);
+
   if (clauses.length == 0) {
     return {
       type: "bool",
@@ -313,7 +315,7 @@ function rebuildFromTree(
   //   }
   //   rows.push(row);
   // }
-  let rows = driver.getRowValuesRebuild(dataList, columns, mapType);
+  let rows = driver.addRowValuesRebuild(dataList, columns, mapType);
 
   if (typeof sample === "object") {
     if (
@@ -352,6 +354,43 @@ function rebuildFromTree(
   return finalResult;
 }
 
+function rebuildJoinedColumn(
+  newTree: Select,
+  joined: boolean,
+  driver: Extension
+) {
+  if (driver.extensionType == "xml" && newTree.columns != "*") {
+    return newTree.columns.map(val => ({
+      expr: {
+        table: newTree.from![0].as,
+        type: val.expr.type,
+        column: joined && val.as ? val.as : val.expr.column,
+      },
+      as: val.as ? val.as : val.expr.column,
+    }));
+  }
+  return newTree.columns;
+}
+function rebuildJoinedWhere(where: any, joinAs: string, driver: Extension) {
+  const recursive = (where: any): any => {
+    console.log(where);
+    if (!where.left && !where.right) {
+      if (where.type === "column_ref") {
+        let tempWhere = where;
+        where.table = joinAs;
+        return tempWhere;
+      }
+      return where;
+    }
+
+    where.right = recursive(where.right);
+    where.left = recursive(where.left);
+
+    return where;
+  };
+  return recursive(where);
+}
+
 function rebuildTree(
   tree: Select,
   dataList: any[],
@@ -378,20 +417,17 @@ function rebuildTree(
     newTree.from.push(treePerFrom);
   }
 
-  newTree.where = rebuildWhere(unsupportedClauses);
-  if (driver.extensionType == "xml" && newTree.columns != "*") {
-    const joined = isJoined(oldTree);
-    // console.log(joined);
+  const joined = isJoined(oldTree);
 
-    newTree.columns = newTree.columns.map(val => ({
-      expr: {
-        table: newTree.from![0].as,
-        type: val.expr.type,
-        column: joined ? val.as : val.expr.column,
-      },
-      as: val.as ? val.as : val.expr.column,
-    }));
+  newTree.where = rebuildWhere(unsupportedClauses);
+  if (joined) {
+    newTree.where = rebuildJoinedWhere(newTree.where, dataList[0].as, driver);
   }
+
+  // console.log(newTree.where);
+
+  newTree.columns = rebuildJoinedColumn(newTree, joined, driver);
+
   // console.log(JSON.stringify(newTree, null, 2));
 
   return newTree;
@@ -399,11 +435,11 @@ function rebuildTree(
 
 function isJoined(oldTree: Select) {
   let joined = false;
-  console.log(oldTree.from);
+  // console.log(oldTree.from);
 
   if (oldTree.from && Array.isArray(oldTree.from)) {
     oldTree.from.forEach(element => {
-      console.log(element);
+      // console.log(element);
 
       if (element.join && element.on) {
         joined = true;
