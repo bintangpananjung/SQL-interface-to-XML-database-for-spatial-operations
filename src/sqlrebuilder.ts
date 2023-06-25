@@ -316,7 +316,6 @@ function rebuildFromTree(
   //   rows.push(row);
   // }
   let rows = driver.addRowValuesRebuild(dataList, columns, mapType);
-
   if (typeof sample === "object") {
     if (
       sample.hasOwnProperty("geometry") &&
@@ -359,13 +358,30 @@ function rebuildJoinedColumn(
   joined: boolean,
   driver: Extension
 ) {
-  if (driver.extensionType == "xml" && newTree.columns != "*") {
+  const recursion = (column: any, as: any) => {
+    if (column.type == "column_ref") {
+      let tempColRef = column;
+      tempColRef.table = newTree.from![0].as;
+      tempColRef.column = as ? as : column.column;
+      return tempColRef;
+    }
+    if (column.type == "function") {
+      let tempCol = column;
+      for (let i = 0; i < tempCol.args.value.length; i++) {
+        tempCol.args.value[i] = recursion(tempCol.args.value[i], as);
+      }
+      return tempCol;
+    }
+    return column;
+  };
+  if (driver.extensionType == "xml" && newTree.columns != "*" && joined) {
     return newTree.columns.map(val => ({
-      expr: {
-        table: newTree.from![0].as,
-        type: val.expr.type,
-        column: joined && val.as ? val.as : val.expr.column,
-      },
+      expr: recursion(val.expr, val.as),
+      // {
+      //   table: newTree.from![0].as,
+      //   type: val.expr.type,
+      //   column: joined && val.as ? val.as : val.expr.column,
+      // }
       as: val.as ? val.as : val.expr.column,
     }));
   }
@@ -373,7 +389,7 @@ function rebuildJoinedColumn(
 }
 function rebuildJoinedWhere(where: any, joinAs: string, driver: Extension) {
   const recursive = (where: any): any => {
-    console.log(where);
+    // console.log(where);
     if (!where.left && !where.right) {
       if (where.type === "column_ref") {
         let tempWhere = where;
@@ -388,7 +404,10 @@ function rebuildJoinedWhere(where: any, joinAs: string, driver: Extension) {
 
     return where;
   };
-  return recursive(where);
+  if (driver.extensionType == "xml") {
+    return recursive(where);
+  }
+  return where;
 }
 
 function rebuildTree(
@@ -419,14 +438,14 @@ function rebuildTree(
 
   const joined = isJoined(oldTree);
 
-  newTree.where = rebuildWhere(unsupportedClauses);
-  if (joined) {
-    newTree.where = rebuildJoinedWhere(newTree.where, dataList[0].as, driver);
-  }
-
-  // console.log(newTree.where);
+  newTree.where = rebuildJoinedWhere(
+    rebuildWhere(unsupportedClauses),
+    dataList[0].as,
+    driver
+  );
 
   newTree.columns = rebuildJoinedColumn(newTree, joined, driver);
+  // console.log(JSON.stringify(newTree.columns, null, 2));
 
   // console.log(JSON.stringify(newTree, null, 2));
 

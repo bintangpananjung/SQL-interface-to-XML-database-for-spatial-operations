@@ -232,10 +232,19 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     });
     let result: any = [];
     try {
+      let getResultTime = new Date().getTime();
       result = await query;
+      console.log(
+        `waktu eksekusi pada DBMS BaseX adalah ${
+          new Date().getTime() - getResultTime
+        }ms`
+      );
       // console.log(result);
     } catch (error) {
       console.log(error);
+    }
+    if (result.length == 0) {
+      throw Error("no data found");
     }
     return result;
   }
@@ -281,7 +290,16 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   ): string {
     const { fname, tname, colname, constant1, operator, constant2 } =
       groups as any;
-    let result = `geo:${funcName}(${constant1}, *[*/@srsName]/*) ${operator} ${constant2}`;
+    let spatialTypes = this.supportedSpatialType.find(element => {
+      return element.extType == this.spatialNamespace.prefix;
+    });
+    let tempSpatialTypes: any[] = [];
+    spatialTypes?.types.forEach(element => {
+      tempSpatialTypes.push(`*/local-name()='${element}'`);
+    });
+    let result = `geo:${funcName}(${constant1}, *[${tempSpatialTypes.join(
+      " or "
+    )}]/*) ${operator} ${constant2}`;
 
     return result;
   }
@@ -290,7 +308,16 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     funcName: string
   ): string {
     const { fname, tname, colname, constant, operator } = groups as any;
-    let result = `geo:${funcName}(*[*/@srsName]/*) ${operator} ${constant}`;
+    let spatialTypes = this.supportedSpatialType.find(element => {
+      return element.extType == this.spatialNamespace.prefix;
+    });
+    let tempSpatialTypes: any[] = [];
+    spatialTypes?.types.forEach(element => {
+      tempSpatialTypes.push(`*/local-name()='${element}'`);
+    });
+    let result = `geo:${funcName}(*[${tempSpatialTypes.join(
+      " or "
+    )}]/*) ${operator} ${constant}`;
 
     return result;
   }

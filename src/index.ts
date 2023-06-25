@@ -25,8 +25,9 @@ class PostgisExtension {
   }
 
   convertToSQL(tree: Select): string {
+    // console.log(JSON.stringify(tree.columns));
+
     let query = util.astToSQL(JSON.parse(JSON.stringify(tree)));
-    // console.log(query);
 
     query = query.replace(/\\r\\n/g, "");
     query = query.replace(/\\/g, "");
@@ -38,9 +39,16 @@ class PostgisExtension {
   }
 
   async finalresult(tree: Select) {
+    let getResultTime = new Date().getTime();
     let query = this.convertToSQL(tree);
+    console.log(
+      `waktu eksekusi pada PostgreSQL adalah ${
+        new Date().getTime() - getResultTime
+      }ms`
+    );
+
     // console.log(JSON.stringify(tree, null, 2));
-    console.log(query);
+    // console.log(query);
 
     query = query.replace(/ROW/g, "");
     let pgclient = await Pool.connect();
@@ -191,7 +199,7 @@ class PostgisExtension {
       this.driver,
       this.driver.extensionType == "xml" && collections.length > 1
     );
-    console.log(unsupportedClauses, "unsup", supportedClauses, "sup");
+    // console.log(unsupportedClauses, "unsup", supportedClauses, "sup");
 
     const mapColumnsPerTable = this.getColumns(tree, unsupportedClauses);
     // console.log(supportedClauses, unsupportedClauses, "unsu");
@@ -258,7 +266,9 @@ class PostgisExtension {
     if (sql != "") {
       let tree = buildAst(sql, this.parser);
       const newTree = await this.processSelect(tree);
+
       const finalResult = await this.finalresult(newTree);
+
       let geoJsonResult;
       if (_.has(finalResult.rows[0], "st_asgeojson")) {
         geoJsonResult = this.convertRestoGeoJSON(finalResult.rows);

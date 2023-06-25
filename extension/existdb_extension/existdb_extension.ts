@@ -24,7 +24,25 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
       modules: [],
     },
   ];
-  supportedSpatialType = [];
+  supportedSpatialType = [
+    {
+      types: [
+        "MultiPoint",
+        "Point",
+        "LineString",
+        "LinearRing",
+        "Polygon",
+        "MultiLineString",
+        "MultiPolygon",
+        "MultiGeometry",
+      ],
+      extType: "gml",
+    },
+    {
+      types: [],
+      extType: "kml",
+    },
+  ];
 
   supportedFunctions = [
     /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
@@ -155,9 +173,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
       await this.connect();
     }
     let result: any[] = [];
-    // console.log(
-    //   this.constructXQuery(collection, checkResult, where, projection)
-    // );
+    // console.log(this.constructXQuery(collection, where, projection, columnAs));
 
     try {
       const query = await this.client.queries.read(
@@ -180,7 +196,9 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     } catch (error) {
       console.log(error);
     }
-
+    if (result.length == 0) {
+      throw Error("no data found");
+    }
     return result;
   }
 

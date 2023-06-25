@@ -69,6 +69,7 @@ async function getData(
       projectionQueryList.push(projectionQuery);
     }
   });
+  let getResultTime = new Date().getTime();
   if (driver.extensionType == "xml") {
     const result = driver.getResult(
       collections,
@@ -80,6 +81,14 @@ async function getData(
   }
 
   const resultList = await Promise.all(resultPromise);
+  console.log(
+    `waktu pembangunan query dan eksekusi pada DBMS adalah ${
+      new Date().getTime() - getResultTime
+    }ms`
+  );
+
+  console.log(resultList);
+
   let finalResult: any[] = [];
   let totalData = 0;
 

@@ -111,7 +111,9 @@ abstract class XMLExtension<T> implements XMLInterface {
               });
             } else {
               if (node.firstChild) {
-                let value = node.firstChild.data;
+                let value = node.firstChild.data
+                  ? node.firstChild.data
+                  : node.childNodes.toString();
                 // console.log(value, mapType[column]);
 
                 if (mapType[column] === "string") {
@@ -830,6 +832,7 @@ abstract class XMLExtension<T> implements XMLInterface {
         }
       }
     }
+
     return result;
   }
   constructXQuery = (
@@ -906,26 +909,37 @@ abstract class XMLExtension<T> implements XMLInterface {
       }j/text()))
           then(
           for $${collection[0].name}k in ${projection[0].childProjection}
-          return element {if($${collection[0].name}k/data()='' or fn:exists($${
+          let $retrieve_condition :=$${
+            collection[0].name
+          }k/data()='' or fn:exists($${collection[0].name}k/text())
+          let $has_child :=fn:exists($${collection[0].name}k[count(*)>0])
+          return element {if($retrieve_condition) then($${
+            collection[0].name
+          }k/local-name()) else(concat('_attribute__',$${
         collection[0].name
-      }k/text())) then($${
+      }j/local-name(),'__',$${
         collection[0].name
-      }k/local-name()) else(concat('_attribute__',$${
+      }k/local-name()))}{if($retrieve_condition) then($${
         collection[0].name
-      }j/local-name(),'__',$${collection[0].name}k/local-name()))}{if($${
+      }k/text()) else(if($has_child)then($${collection[0].name}k/*)else($${
         collection[0].name
-      }k/data()='' or fn:exists($${collection[0].name}k/text())) then($${
-        collection[0].name
-      }k/text()) else($${collection[0].name}k/data())}
+      }k/data()))}
           )
           else(
-            element {concat('_attribute__',$${
-              collection[0].name
-            }j/local-name())}{$${collection[0].name}j/data()}
+            element {if(fn:exists($${collection[0].name}j[count(*)>0]))then($${
+        collection[0].name
+      }j/local-name())else(concat('_attribute__',$${
+        collection[0].name
+      }j/local-name()))}{if(fn:exists($${
+        collection[0].name
+      }j[count(*)>0]))then($${collection[0].name}j/*)else($${
+        collection[0].name
+      }j/data())}
           )
         )
       }`;
     }
+    // console.log(result);
     return result;
     // `for $i in ${this.version.getDocFunc(
     //   collection,
@@ -1079,13 +1093,13 @@ abstract class XMLExtension<T> implements XMLInterface {
         spatialTypes?.types.forEach(element => {
           tempSpatialTypes.push(`local-name()='${element}'`);
         });
-        result += `*[${tempSpatialTypes.join(" or ")}]`;
-        // if (this.spatialNamespace.prefix == "gml") {
-        //   result += `*[*/@srsName]/*`;
-        // }
-        // if (this.spatialNamespace.prefix == "kml") {
-        //   result += `*[local-name()='Point' or local-name()='LineString' or local-name()='Polygon' or local-name()='MultiGeometry']`;
-        // }
+
+        if (this.spatialNamespace.prefix == "gml") {
+          result += `*/*[${tempSpatialTypes.join(" or ")}]`;
+        }
+        if (this.spatialNamespace.prefix == "kml") {
+          result += `*[${tempSpatialTypes.join(" or ")}]`;
+        }
       } else {
         if (column.includes("_attribute__")) {
           let columnAttr = column.split("__");
