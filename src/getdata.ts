@@ -57,7 +57,7 @@ async function getData(
       : new Set<string>();
 
     const projectionQuery = driver.constructProjectionQuery(columns, col);
-    if (driver.extensionType != "xml") {
+    if (!driver.canJoin) {
       const result = driver.getResult(
         col.name,
         selectionQuery,
@@ -70,7 +70,7 @@ async function getData(
     }
   });
   let getResultTime = new Date().getTime();
-  if (driver.extensionType == "xml") {
+  if (driver.canJoin) {
     const result = driver.getResult(
       collections,
       selectionQueryList,
@@ -79,22 +79,38 @@ async function getData(
     );
     resultPromise.push(result);
   }
+  // console.log(resultPromise);
+  let resultList: any[] = [];
 
-  const resultList = await Promise.all(resultPromise);
+  if (!driver.canJoin && driver.extensionType == "xml") {
+    for (const promise of resultPromise) {
+      try {
+        const res = await promise;
+        if (!res) {
+          return;
+        }
+        resultList.push(res);
+      } catch (error) {
+        console.log(error);
+      }
+    }
+  } else {
+    resultList = await Promise.all(resultPromise);
+  }
+  // console.log(resultList);
+
   console.log(
     `waktu pembangunan query dan eksekusi pada DBMS adalah ${
       new Date().getTime() - getResultTime
     }ms`
   );
 
-  console.log(resultList);
-
   let finalResult: any[] = [];
   let totalData = 0;
 
   for (let i = 0; i < resultList.length; i++) {
     let result = resultList[i];
-    if (driver.extensionType != "xml") {
+    if (!driver.canJoin) {
       result = driver.standardizeData(resultList[i]);
       finalResult.push({
         table: collections[i].name,

@@ -22,6 +22,7 @@ abstract class JsonExtension<T> implements Extension {
     collection: string
   ): string;
   abstract supportedFunctions: RegExp[];
+  abstract canJoin: boolean;
 
   extensionType = "json";
   supportedTypes = ["number", "string", "bool", "expr_list"];

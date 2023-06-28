@@ -25,17 +25,18 @@ class PostgisExtension {
   }
 
   convertToSQL(tree: Select): string {
-    // console.log(JSON.stringify(tree.columns));
+    // console.log(JSON.stringify(tree, null, 2));
 
     let query = util.astToSQL(JSON.parse(JSON.stringify(tree)));
-
     query = query.replace(/\\r\\n/g, "");
     query = query.replace(/\\/g, "");
     query = query.replace(/`/g, "");
     query = query.replace(/^\s+|\s+$|\s+(?=\s)/g, "");
-    // query = query.replace(/^\s+|\s+$|\s+(?=<)/g, "");
-
     return query;
+
+    // console.log(query);
+
+    // query = query.replace(/^\s+|\s+$|\s+(?=<)/g, "");
   }
 
   async finalresult(tree: Select) {
@@ -197,9 +198,9 @@ class PostgisExtension {
     const { supportedClauses, unsupportedClauses } = filterWhereStatement(
       tree,
       this.driver,
-      this.driver.extensionType == "xml" && collections.length > 1
+      this.driver.canJoin && collections.length > 1
     );
-    // console.log(unsupportedClauses, "unsup", supportedClauses, "sup");
+    console.log(unsupportedClauses, "unsup", supportedClauses, "sup");
 
     const mapColumnsPerTable = this.getColumns(tree, unsupportedClauses);
     // console.log(supportedClauses, unsupportedClauses, "unsu");

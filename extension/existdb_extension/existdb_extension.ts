@@ -12,6 +12,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
   supportedXMLExtensionType = ["gml"];
   spatialModuleNamespaces = [];
   spatialNamespace: { prefix: string; namespace: string };
+  canJoin: boolean = false;
   moduleConfig: XMLConfig[] = [
     {
       version: ["6.0.1"],
@@ -44,12 +45,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     },
   ];
 
-  supportedFunctions = [
-    /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
-    /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
-    /(?<fname>.*)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant>[0-9\.]*)/g,
-    /(?<fname>.*)\(ST_AsText\(ST_GeomFromGML\('(?<constant1>.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant2>[0-9\.]*)/g,
-  ];
+  supportedFunctions: any[] = [];
 
   constructor() {
     super("localhost", null, "test", "admin", "admin");
@@ -60,6 +56,10 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     try {
       this.client = existdb.connect({
         basic_auth: { user: "admin", pass: "" },
+        secure: true,
+        host: "localhost",
+        port: "8443",
+        path: "/exist/xmlrpc",
       });
       //   console.log("connected");
     } catch (e) {
@@ -173,6 +173,8 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
       await this.connect();
     }
     let result: any[] = [];
+    console.log("yes");
+
     // console.log(this.constructXQuery(collection, where, projection, columnAs));
 
     try {
@@ -184,6 +186,9 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
           limit: 999999999,
         }
       );
+      console.log(Boolean(this.client));
+      // console.log(query);
+
       const docResult = new dom().parseFromString(query);
       const nodesResult: any = xpath.select("/*/*", docResult);
       // console.log(nodesResult[0].toString());
@@ -192,13 +197,13 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
         result.push(node.toString());
       });
 
-      // console.log(result);
+      console.log(result[0]);
     } catch (error) {
       console.log(error);
     }
-    if (result.length == 0) {
-      throw Error("no data found");
-    }
+    // if (result.length == 0) {
+    //   throw Error("no data found");
+    // }
     return result;
   }
 

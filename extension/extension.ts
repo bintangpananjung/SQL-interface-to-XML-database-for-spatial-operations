@@ -36,6 +36,7 @@ interface Extension {
   supportedOperators: Supported[];
   extensionType: string;
   supportPreExecutionQuery: boolean;
+  canJoin: boolean;
 
   connect(): void;
   constructSelectionQuery(where: any): any;
@@ -78,11 +79,13 @@ interface XMLInterface extends Extension {
   constructExtensionQuery(
     extension: any,
     varName: string,
-    subVarName: string
+    subVarName: string,
+    projection?: any
   ): {
     path: string;
     spatialSelectionNoCondition: string;
     spatialSelectionWithCondition: string;
+    retrieveCustomDataCondition: string;
   };
   // constructJoinQuery(
   //   type: "inner" | "left" | "right" | "full" | "natural",

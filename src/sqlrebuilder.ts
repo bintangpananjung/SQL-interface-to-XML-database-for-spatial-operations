@@ -200,6 +200,8 @@ function rebuildFromTree(
     return defaultTree(tree);
   }
   const sample = dataList[0];
+  // console.log(sample);
+
   // if (sample.hasOwnProperty("properties")) {
   //   for (let [key, value] of Object.entries(sample.properties)) {
   //     listColumns.push({
@@ -243,6 +245,7 @@ function rebuildFromTree(
   // }
 
   selectTree.columns = driver.addSelectTreeColumnsRebuild(sample, listColumns);
+  // console.log("asd");
 
   // let columns: any[] = [];
   // let mapType = {} as any;
@@ -260,6 +263,7 @@ function rebuildFromTree(
   // }
 
   let { columns, mapType } = driver.addColumnAndMapKeyRebuild(sample);
+  // console.log("asd");
 
   // let rows: any[] = [];
   // for (const data of dataList) {
@@ -316,6 +320,8 @@ function rebuildFromTree(
   //   rows.push(row);
   // }
   let rows = driver.addRowValuesRebuild(dataList, columns, mapType);
+  // console.log("asd");
+
   if (typeof sample === "object") {
     if (
       sample.hasOwnProperty("geometry") &&
@@ -374,7 +380,7 @@ function rebuildJoinedColumn(
     }
     return column;
   };
-  if (driver.extensionType == "xml" && newTree.columns != "*" && joined) {
+  if (driver.canJoin && newTree.columns != "*" && joined) {
     return newTree.columns.map(val => ({
       expr: recursion(val.expr, val.as),
       // {
@@ -404,7 +410,7 @@ function rebuildJoinedWhere(where: any, joinAs: string, driver: Extension) {
 
     return where;
   };
-  if (driver.extensionType == "xml") {
+  if (driver.canJoin) {
     return recursive(where);
   }
   return where;

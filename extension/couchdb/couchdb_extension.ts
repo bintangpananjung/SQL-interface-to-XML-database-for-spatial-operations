@@ -7,6 +7,7 @@ import { AutoEncryptionExtraOptions } from "mongodb";
 
 class CouchDbExtension extends JsonExtension<any> {
   supportPreExecutionQuery: boolean = false;
+  canJoin: boolean = false;
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
     for (const pattern of this.supportedFunctions) {

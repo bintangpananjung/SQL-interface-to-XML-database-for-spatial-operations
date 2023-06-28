@@ -10,6 +10,7 @@ var basex = require("basex");
 class BaseXExtension extends XMLExtension<typeof basex> {
   version: XMLConfig;
   supportPreExecutionQuery: boolean = true;
+  canJoin: boolean = true;
   spatialNamespace: { prefix: string; namespace: string };
   moduleConfig: XMLConfig[] = [
     {
