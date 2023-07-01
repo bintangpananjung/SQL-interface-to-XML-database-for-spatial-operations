@@ -150,17 +150,39 @@ class PostgisExtension {
       ) {
         return;
       }
-
-      if (ast.type == "column_ref") {
-        const { table, column } = ast;
-        if (!mapColumnsPerTable.has(table)) {
-          mapColumnsPerTable.set(table, new Set<string>());
+      if (
+        ast.expr &&
+        ast.expr.type == "function" &&
+        ast.expr.args.value.length == 1
+      ) {
+        const functionSupported = this.driver.supportedProjectionFunctions.find(
+          val => val.postGISName == ast.expr.name && val.args == 1
+        );
+        const colref = ast.expr.args.value[0];
+        if (!mapColumnsPerTable.has(colref.table)) {
+          mapColumnsPerTable.set(colref.table, new Set<string>());
         }
-        mapColumnsPerTable.get(table)!.add(column);
-      }
+        if (functionSupported) {
+          mapColumnsPerTable
+            .get(colref.table)!
+            .add(`${ast.expr.name}(${colref.column})`);
+        } else {
+          mapColumnsPerTable.get(colref.table)!.add(colref.column);
+        }
 
-      for (const key in ast) {
-        recursive(ast[key]);
+        return;
+      } else {
+        if (ast.type == "column_ref") {
+          const { table, column } = ast;
+          if (!mapColumnsPerTable.has(table)) {
+            mapColumnsPerTable.set(table, new Set<string>());
+          }
+          mapColumnsPerTable.get(table)!.add(column);
+        }
+
+        for (const key in ast) {
+          recursive(ast[key]);
+        }
       }
     };
 
@@ -200,9 +222,11 @@ class PostgisExtension {
       this.driver,
       this.driver.canJoin && collections.length > 1
     );
+
     console.log(unsupportedClauses, "unsup", supportedClauses, "sup");
 
     const mapColumnsPerTable = this.getColumns(tree, unsupportedClauses);
+    console.log(mapColumnsPerTable, "mapColumnsPerTable");
     // console.log(supportedClauses, unsupportedClauses, "unsu");
 
     const { finalResult, totalData } = await getData(

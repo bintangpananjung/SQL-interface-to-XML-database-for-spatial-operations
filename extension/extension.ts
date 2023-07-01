@@ -14,6 +14,7 @@ type XMLConfig = {
   version: string[];
   getDocFunc(collection: string, db_name: string, client?: any): string;
   getCollectionNamesFunc(db_name: string, client?: any): string;
+  mapOperator: string;
   modules: {
     supportedSpatialFunctionPrefix: {
       name: string;
@@ -22,6 +23,7 @@ type XMLConfig = {
     }[];
     getSTAsTextfunc?(node: any): string;
     extension: string;
+    namespaceModule: { prefix: string; namespace: string };
   }[];
 };
 
@@ -32,7 +34,14 @@ interface Supported {
 
 interface Extension {
   supportedTypes: string[];
-  supportedFunctions: RegExp[];
+  supportedSelectionFunctions: RegExp[];
+  supportedProjectionFunctions: {
+    regex: RegExp;
+    name: string;
+    args: number;
+    postGISName: string;
+    isAggregation: boolean;
+  }[];
   supportedOperators: Supported[];
   extensionType: string;
   supportPreExecutionQuery: boolean;

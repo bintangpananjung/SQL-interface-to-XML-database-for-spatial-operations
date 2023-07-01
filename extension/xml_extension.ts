@@ -7,7 +7,7 @@ import * as xpath from "xpath-ts";
 import { doubleTheQuote } from "../src/sqlrebuilder";
 
 abstract class XMLExtension<T> implements XMLInterface {
-  abstract supportedFunctions: RegExp[];
+  abstract supportedSelectionFunctions: RegExp[];
   abstract spatialModuleNamespaces: any[];
   abstract supportedXMLExtensionType: string[];
   abstract supportedSpatialType: { extType: string; types: string[] }[];
@@ -16,6 +16,13 @@ abstract class XMLExtension<T> implements XMLInterface {
   abstract spatialNamespace: { prefix: string; namespace: string };
   abstract supportPreExecutionQuery: boolean;
   abstract canJoin: boolean;
+  abstract supportedProjectionFunctions: {
+    regex: RegExp;
+    name: string;
+    args: number;
+    postGISName: string;
+    isAggregation: boolean;
+  }[];
 
   abstract connect(): void;
   abstract getAllFields(col_name: string): Promise<string[]>;
@@ -101,8 +108,11 @@ abstract class XMLExtension<T> implements XMLInterface {
 
           if (nodes.length > 0) {
             const node: any = nodes[0];
+            const geotype = this.supportedSpatialType
+              .find(val => val.extType == this.spatialNamespace.prefix)
+              ?.types.find(el => el == node.firstChild?.localName);
 
-            if (node.localName === "geometry") {
+            if (node.localName === "geometry" || geotype) {
               row.value.push({
                 type: "string",
                 value: node.firstChild.data
@@ -300,7 +310,10 @@ abstract class XMLExtension<T> implements XMLInterface {
       const doc = new dom().parseFromString(sample);
       const nodes: any = xpath.select("/result/*", doc);
       nodes.forEach((value: any) => {
-        if (value.localName == "geometry") {
+        const geotype = this.supportedSpatialType
+          .find(val => val.extType == this.spatialNamespace.prefix)
+          ?.types.find(el => el == value.firstChild?.localName);
+        if (value.localName == "geometry" || geotype) {
           if (!moduleVersion || !moduleVersion.getSTAsTextfunc) {
             listColumns.push({
               expr: {
@@ -318,7 +331,7 @@ abstract class XMLExtension<T> implements XMLInterface {
                           {
                             type: "column_ref",
                             table: null,
-                            column: "geometry",
+                            column: value.localName,
                           },
                         ],
                       },
@@ -326,7 +339,7 @@ abstract class XMLExtension<T> implements XMLInterface {
                   ],
                 },
               },
-              as: "geometry",
+              as: value.localName,
             });
           } else {
             listColumns.push({
@@ -512,7 +525,8 @@ abstract class XMLExtension<T> implements XMLInterface {
     where: any[],
     projection: any[],
     columnAs: any,
-    constructTableQuery: any
+    constructTableQuery: any,
+    moduleVersion: any
   ): string {
     const recursion = (join: any, depth: number): string => {
       let joinOnQuery = "";
@@ -614,7 +628,7 @@ abstract class XMLExtension<T> implements XMLInterface {
             // const columns = columnAs.get(key);
 
             element.col.forEach((val: any, idxcol: any) => {
-              result += `'${val.column}' := '${val.as}'`;
+              result += `'${val.column}' ${this.version.mapOperator} '${val.as}'`;
               if (idxcol < element.col.length - 1) {
                 result += ",";
               }
@@ -624,7 +638,11 @@ abstract class XMLExtension<T> implements XMLInterface {
           result += ` where ${joinOn}`;
           result += ` return element{'result'}{(`;
           columnAsArray.forEach((element, idx) => {
-            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${element.table}[local-name()=$col${idx}]/text()}`;
+            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${
+              element.table
+            }[local-name()=$col${idx}]/${
+              moduleVersion?.getSTAsTextfunctext() ? "text()" : "*"
+            }}`;
             if (idx < columnAsArray.length - 1) {
               result += ",";
             }
@@ -707,7 +725,7 @@ abstract class XMLExtension<T> implements XMLInterface {
             // const columns = columnAs.get(key);
 
             element.col.forEach((val: any, idxcol: any) => {
-              result += `'${val.column}' := '${val.as}'`;
+              result += `'${val.column}' ${this.version.mapOperator} '${val.as}'`;
               if (idxcol < element.col.length - 1) {
                 result += ",";
               }
@@ -717,7 +735,11 @@ abstract class XMLExtension<T> implements XMLInterface {
           result += ` where ${joinOn}`;
           result += ` return element{'result'}{(`;
           columnAsArray.forEach((element, idx) => {
-            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${element.table}[local-name()=$col${idx}]/text()}`;
+            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${
+              element.table
+            }[local-name()=$col${idx}]/${
+              moduleVersion?.getSTAsTextfunctext() ? "text()" : "*"
+            }}`;
             if (idx < columnAsArray.length - 1) {
               result += ",";
             }
@@ -803,7 +825,11 @@ abstract class XMLExtension<T> implements XMLInterface {
           });
           result += ` return element{'result'}{(`;
           columnAsArray.forEach((element, idx) => {
-            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{if(fn:exists($element${element.table}))then($element${element.table}[local-name()=$col${idx}]/text())else()}`;
+            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{if(fn:exists($element${
+              element.table
+            }))then($element${element.table}[local-name()=$col${idx}]/${
+              moduleVersion?.getSTAsTextfunctext() ? "text()" : "*"
+            })else()}`;
             if (idx < columnAsArray.length - 1) {
               result += ",";
             }
@@ -865,11 +891,11 @@ abstract class XMLExtension<T> implements XMLInterface {
       val => val.extension === this.spatialNamespace.prefix
     );
 
-    const modules = this.spatialModuleNamespaces.find(
+    const modules = this.version.modules.find(
       val => val.extension == this.spatialNamespace.prefix
     );
     const moduleNamespaces = this.constructSpatialNamespace(
-      modules ? modules.modules : [],
+      modules ? [modules.namespaceModule] : [],
       true
     );
     let result = namespaces + moduleNamespaces;
@@ -908,7 +934,8 @@ abstract class XMLExtension<T> implements XMLInterface {
           where,
           projection,
           columnAs,
-          constructTableQuery
+          constructTableQuery,
+          moduleVersion
         );
       } else {
         const extensionQuery = this.constructExtensionQuery(
@@ -935,7 +962,7 @@ abstract class XMLExtension<T> implements XMLInterface {
       }
     }
 
-    console.log(result);
+    // console.log(result);
     return result;
     // `for $i in ${this.version.getDocFunc(
     //   collection,

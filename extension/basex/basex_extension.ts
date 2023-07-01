@@ -11,6 +11,21 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   version: XMLConfig;
   supportPreExecutionQuery: boolean = true;
   canJoin: boolean = true;
+  supportedProjectionFunctions: {
+    regex: RegExp;
+    name: string;
+    args: number;
+    postGISName: string;
+    isAggregation: boolean;
+  }[] = [
+    {
+      regex: /'/g,
+      name: "count",
+      args: 1,
+      isAggregation: true,
+      postGISName: "count",
+    },
+  ];
   spatialNamespace: { prefix: string; namespace: string };
   moduleConfig: XMLConfig[] = [
     {
@@ -18,8 +33,9 @@ class BaseXExtension extends XMLExtension<typeof basex> {
       getDocFunc(collection: any, db_name: any) {
         return `db:open("${db_name}","${collection}")`;
       },
+      mapOperator: ":=",
       getCollectionNamesFunc(db_name: string) {
-        return `db:list-details("${db_name}")`;
+        return `db:list-details("${db_name}")/text()`;
       },
       modules: [
         {
@@ -32,8 +48,50 @@ class BaseXExtension extends XMLExtension<typeof basex> {
             return `geo:as-text(${node})`;
           },
           extension: "gml",
+          namespaceModule: {
+            prefix: "gml",
+            namespace: "http://expath.org/ns/geo",
+          },
         },
       ],
+    },
+    {
+      version: ["9.7"],
+      getDocFunc(collection: any, db_name: any) {
+        return `db:open("${db_name}","${collection}")`;
+      },
+      mapOperator: ":",
+      getCollectionNamesFunc(db_name: string) {
+        return `db:list-details("${db_name}")/text()`;
+      },
+      modules: [
+        {
+          supportedSpatialFunctionPrefix: [
+            { name: "distance", postGISName: "ST_Distance", args: 2 },
+            { name: "within", postGISName: "ST_Within", args: 2 },
+            { name: "dimension", postGISName: "ST_Dimension", args: 1 },
+          ],
+          getSTAsTextfunc(node: any) {
+            return `geo:as-text(${node})`;
+          },
+          extension: "gml",
+          namespaceModule: {
+            prefix: "gml",
+            namespace: "http://expath.org/ns/geo",
+          },
+        },
+      ],
+    },
+    {
+      version: ["10.5"],
+      getDocFunc(collection: any, db_name: any) {
+        return `db:get("${db_name}","${collection}")`;
+      },
+      mapOperator: ":",
+      getCollectionNamesFunc(db_name: string) {
+        return `db:list("${db_name}")`;
+      },
+      modules: [],
     },
   ];
   supportedXMLExtensionType = ["kml", "gml"];
@@ -63,7 +121,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     },
   ];
 
-  supportedFunctions = [
+  supportedSelectionFunctions = [
     /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
     /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
     /(?<fname>.*)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant>[0-9\.]*)/g,
@@ -71,7 +129,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   ];
 
   constructor() {
-    super("localhost", null, "test", "admin", "admin");
+    super("localhost", null, "test", "bintang", "bintang");
     this.version = {} as any;
     this.spatialNamespace = {} as any;
   }
@@ -115,6 +173,8 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     if (moduleInVersion) {
       this.version = moduleInVersion;
     } else {
+      // alert("This BaseX version is still not implemented in this program");
+      // location.reload()
       throw new Error(
         "This BaseX version is still not implemented in this program"
       );
@@ -123,7 +183,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
 
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
-    for (const pattern of this.supportedFunctions) {
+    for (const pattern of this.supportedSelectionFunctions) {
       pattern.lastIndex = 0;
       let regResult = pattern.exec(funcStr);
       if (regResult == null) {
@@ -264,7 +324,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     }
     const promise: Promise<string[]> = new Promise((resolve, reject) => {
       this.client
-        .query(`${this.version.getCollectionNamesFunc(this.db_name)}/text()`)
+        .query(`${this.version.getCollectionNamesFunc(this.db_name)}`)
         .results((err: any, res: any) => {
           if (err) {
             resolve(err);

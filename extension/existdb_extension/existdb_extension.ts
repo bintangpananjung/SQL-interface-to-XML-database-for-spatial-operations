@@ -13,12 +13,20 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
   spatialModuleNamespaces = [];
   spatialNamespace: { prefix: string; namespace: string };
   canJoin: boolean = false;
+  supportedProjectionFunctions: {
+    regex: RegExp;
+    name: string;
+    args: number;
+    postGISName: string;
+    isAggregation: boolean;
+  }[] = [];
   moduleConfig: XMLConfig[] = [
     {
       version: ["6.0.1"],
       getDocFunc(collection: any, db_name: any, client: any) {
         return `collection("/db/${db_name}/${collection}")`;
       },
+      mapOperator: ":",
       getCollectionNamesFunc(db_name: string, client: any) {
         return client.collection.read(`db/${db_name}`);
       },
@@ -45,7 +53,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     },
   ];
 
-  supportedFunctions: any[] = [];
+  supportedSelectionFunctions: any[] = [];
 
   constructor() {
     super("localhost", null, "test", "admin", "admin");
@@ -88,7 +96,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
 
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
-    for (const pattern of this.supportedFunctions) {
+    for (const pattern of this.supportedSelectionFunctions) {
       pattern.lastIndex = 0;
       let regResult = pattern.exec(funcStr);
       if (regResult == null) {

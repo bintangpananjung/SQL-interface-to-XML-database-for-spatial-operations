@@ -8,7 +8,7 @@ class MongoExtension extends JsonExtension<MongoClient> {
   canJoin: boolean = false;
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
-    for (const pattern of this.supportedFunctions) {
+    for (const pattern of this.supportedSelectionFunctions) {
       pattern.lastIndex = 0;
       let regResult = pattern.exec(funcStr);
       if (regResult == null) {
@@ -28,8 +28,15 @@ class MongoExtension extends JsonExtension<MongoClient> {
     }
     return "";
   }
+  supportedProjectionFunctions: {
+    regex: RegExp;
+    name: string;
+    args: number;
+    postGISName: string;
+    isAggregation: boolean;
+  }[] = [];
 
-  supportedFunctions = [
+  supportedSelectionFunctions = [
     /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
     /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
     /(?<fname>ST_Distance)\(ST_AsText\(ST_GeomFromGeoJSON\('(?<constant1>.*type.*coordinates.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=) (?<constant2>[0-9\.]*)/g,

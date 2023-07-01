@@ -95,7 +95,7 @@ function filterWhereStatement(
     const isSupportedFunction = (
       ast: any
     ): { isSupported: boolean; table: string } => {
-      let regexPatterns = driver.supportedFunctions;
+      let regexPatterns = driver.supportedSelectionFunctions;
       let isSupported = false;
       let table = "";
       for (const pattern of regexPatterns) {

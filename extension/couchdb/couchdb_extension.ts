@@ -8,9 +8,16 @@ import { AutoEncryptionExtraOptions } from "mongodb";
 class CouchDbExtension extends JsonExtension<any> {
   supportPreExecutionQuery: boolean = false;
   canJoin: boolean = false;
+  supportedProjectionFunctions: {
+    regex: RegExp;
+    name: string;
+    args: number;
+    postGISName: string;
+    isAggregation: boolean;
+  }[] = [];
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
-    for (const pattern of this.supportedFunctions) {
+    for (const pattern of this.supportedSelectionFunctions) {
       pattern.lastIndex = 0;
       let regResult = pattern.exec(funcStr);
       if (regResult == null) {
@@ -29,7 +36,7 @@ class CouchDbExtension extends JsonExtension<any> {
     return "";
   }
 
-  supportedFunctions = [
+  supportedSelectionFunctions = [
     /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
   ];
 

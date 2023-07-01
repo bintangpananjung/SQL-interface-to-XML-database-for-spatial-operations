@@ -8,6 +8,13 @@ abstract class JsonExtension<T> implements Extension {
   abstract supportPreExecutionQuery: boolean;
   abstract connect(): void;
   abstract getAllFields(col_name: string): Promise<string[]>;
+  abstract supportedProjectionFunctions: {
+    regex: RegExp;
+    name: string;
+    args: number;
+    postGISName: string;
+    isAggregation: boolean;
+  }[];
   abstract getResult(
     collection: string,
     where: string,
@@ -21,7 +28,7 @@ abstract class JsonExtension<T> implements Extension {
     columns: Set<string>,
     collection: string
   ): string;
-  abstract supportedFunctions: RegExp[];
+  abstract supportedSelectionFunctions: RegExp[];
   abstract canJoin: boolean;
 
   extensionType = "json";

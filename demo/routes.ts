@@ -68,8 +68,23 @@ router.post("/", async (req, res) => {
   }
   // const gis = dbms === "mongodb" ? mongoGis : couchGis;
   // console.log(gis.driver);
-  if (gis.driver.extensionType == "xml") {
-    await (gis.driver as any).initVersion();
+  try {
+    if (gis.driver.extensionType == "xml") {
+      await (gis.driver as any).initVersion();
+    }
+  } catch (error) {
+    res.render("index", {
+      title,
+      input: sql,
+      query: undefined,
+      db: null,
+      listCollections: [],
+      error: error.message,
+      results: undefined,
+      result_geojson: null,
+      dbms,
+      statistic: undefined,
+    });
   }
 
   const db = gis.driver.getDbName();
