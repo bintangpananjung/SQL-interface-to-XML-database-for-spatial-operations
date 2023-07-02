@@ -49,7 +49,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
           },
           extension: "gml",
           namespaceModule: {
-            prefix: "gml",
+            prefix: "geo",
             namespace: "http://expath.org/ns/geo",
           },
         },
@@ -76,7 +76,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
           },
           extension: "gml",
           namespaceModule: {
-            prefix: "gml",
+            prefix: "geo",
             namespace: "http://expath.org/ns/geo",
           },
         },
@@ -122,10 +122,30 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   ];
 
   supportedSelectionFunctions = [
-    /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
-    /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
-    /(?<fname>.*)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant>[0-9\.]*)/g,
-    /(?<fname>.*)\(ST_AsText\(ST_GeomFromGML\('(?<constant1>.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant2>[0-9\.]*)/g,
+    {
+      regex:
+        /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
+      matches: ["date"],
+      version: ["7.6", "9.7", "10.5"],
+    },
+    {
+      regex:
+        /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
+      matches: ["mod"],
+      version: ["7.6", "9.7", "10.5"],
+    },
+    {
+      regex:
+        /(?<fname>.*)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant>[0-9\.]*)/g,
+      matches: ["ST_Dimension", "ST_AsText"],
+      version: ["7.6", "9.7"],
+    },
+    {
+      regex:
+        /(?<fname>.*)\(ST_AsText\((ST_GeomFromGML|ST_GeomFromKML)\('(?<constant1>.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant2>[0-9\.]*)/g,
+      matches: ["ST_Distance", "ST_Within"],
+      version: ["7.6", "9.7"],
+    },
   ];
 
   constructor() {
@@ -184,8 +204,8 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
     for (const pattern of this.supportedSelectionFunctions) {
-      pattern.lastIndex = 0;
-      let regResult = pattern.exec(funcStr);
+      pattern.regex.lastIndex = 0;
+      let regResult = pattern.regex.exec(funcStr);
       if (regResult == null) {
         continue;
       }
@@ -265,10 +285,11 @@ class BaseXExtension extends XMLExtension<typeof basex> {
   }
 
   async getResult(
-    collection: any[],
-    where: any[],
-    projection: any[],
-    columnAs?: any
+    collection: string | any[],
+    where: string | any[],
+    projection: string | any[],
+    groupby: string | any[],
+    columnAs?: any | undefined
   ): Promise<any> {
     if (!this.client) {
       await this.connect();
@@ -277,7 +298,9 @@ class BaseXExtension extends XMLExtension<typeof basex> {
 
     const query = new Promise((resolve, reject) => {
       this.client
-        .query(this.constructXQuery(collection, where, projection, columnAs))
+        .query(
+          this.constructXQuery(collection, where, projection, groupby, columnAs)
+        )
         .results((err: any, res: any) => {
           if (err) {
             reject(err);

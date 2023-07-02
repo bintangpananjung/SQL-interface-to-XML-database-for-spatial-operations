@@ -139,8 +139,12 @@ class PostgisExtension {
     return tree;
   }
 
-  getColumns = (tree: Select, clauses: any[]): Map<string, Set<string>> => {
+  getColumns = (
+    tree: Select,
+    clauses: any[]
+  ): { mapColumns: Map<string, Set<string>>; funcColumns: any[] } => {
     const mapColumnsPerTable = new Map<string, Set<string>>();
+    const tempFuncColumns: any[] = [];
     const recursive = (ast: any) => {
       if (
         ast == null ||
@@ -150,27 +154,51 @@ class PostgisExtension {
       ) {
         return;
       }
-      if (
-        ast.expr &&
-        ast.expr.type == "function" &&
-        ast.expr.args.value.length == 1
-      ) {
-        const functionSupported = this.driver.supportedProjectionFunctions.find(
-          val => val.postGISName == ast.expr.name && val.args == 1
-        );
-        const colref = ast.expr.args.value[0];
-        if (!mapColumnsPerTable.has(colref.table)) {
-          mapColumnsPerTable.set(colref.table, new Set<string>());
-        }
-        if (functionSupported) {
-          mapColumnsPerTable
-            .get(colref.table)!
-            .add(`${ast.expr.name}(${colref.column})`);
+      if (ast.expr) {
+        if (ast.expr.type !== "column_ref") {
+          const functionSupported =
+            this.driver.supportedProjectionFunctions.find(
+              val =>
+                val.postGISName == ast.expr.name.toLowerCase() && val.args == 1
+            );
+          let colref: any;
+          if (ast.expr.type == "function" && ast.expr.args.value.length == 1) {
+            colref = ast.expr.args.value[0];
+          }
+          if (ast.expr.type == "aggr_func") {
+            colref = ast.expr.args.expr;
+          }
+          if (!mapColumnsPerTable.has(colref.table)) {
+            mapColumnsPerTable.set(colref.table, new Set<string>());
+          }
+          if (functionSupported) {
+            mapColumnsPerTable
+              .get(colref.table)!
+              .add(
+                `${ast.expr.name.toLowerCase()}(${colref.table}.${
+                  colref.column
+                })`
+              );
+            tempFuncColumns.push({
+              func_name: ast.expr.name.toLowerCase(),
+              table: colref.table,
+              column: colref.column,
+            });
+          } else {
+            mapColumnsPerTable.get(colref.table)!.add(colref.column);
+          }
+          return;
         } else {
-          mapColumnsPerTable.get(colref.table)!.add(colref.column);
+          const { table, column } = ast.expr;
+          if (!mapColumnsPerTable.has(table)) {
+            mapColumnsPerTable.set(table, new Set<string>());
+          }
+          mapColumnsPerTable.get(table)!.add(column);
         }
 
-        return;
+        for (const key in ast.expr) {
+          recursive(ast[key]);
+        }
       } else {
         if (ast.type == "column_ref") {
           const { table, column } = ast;
@@ -187,7 +215,7 @@ class PostgisExtension {
     };
 
     if (tree.columns == "*") {
-      return new Map<string, Set<string>>();
+      return { mapColumns: new Map<string, Set<string>>(), funcColumns: [] };
     }
 
     recursive(tree.columns);
@@ -196,7 +224,7 @@ class PostgisExtension {
       recursive(clause);
     }
 
-    return mapColumnsPerTable;
+    return { mapColumns: mapColumnsPerTable, funcColumns: tempFuncColumns };
   };
 
   async processSelect(tree: Select) {
@@ -225,15 +253,15 @@ class PostgisExtension {
 
     console.log(unsupportedClauses, "unsup", supportedClauses, "sup");
 
-    const mapColumnsPerTable = this.getColumns(tree, unsupportedClauses);
-    console.log(mapColumnsPerTable, "mapColumnsPerTable");
+    const columns = this.getColumns(tree, unsupportedClauses);
+    // console.log(columns, "columnsget");
     // console.log(supportedClauses, unsupportedClauses, "unsu");
 
     const { finalResult, totalData } = await getData(
       tree,
       supportedClauses,
       this.driver,
-      mapColumnsPerTable,
+      columns.mapColumns,
       collections
     );
     this.totalData += totalData;
@@ -254,7 +282,8 @@ class PostgisExtension {
       tree,
       finalResult,
       unsupportedClauses,
-      mapColumnsPerTable,
+      columns.mapColumns,
+      columns.funcColumns,
       this._driver
     );
   }

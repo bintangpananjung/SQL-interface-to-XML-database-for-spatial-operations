@@ -109,36 +109,6 @@ function rebuildFromTree(
     type: "select",
   };
 
-  // function doubleTheQuote(str: string) {
-  //   function getIndicesOf(searchStr: string, str: string) {
-  //     var searchStrLen = searchStr.length;
-  //     if (searchStrLen == 0) {
-  //       return [];
-  //     }
-  //     var startIndex = 0,
-  //       index,
-  //       indices = [];
-
-  //     while ((index = str.indexOf(searchStr, startIndex)) > -1) {
-  //       indices.push(index);
-  //       startIndex = index + searchStrLen;
-  //     }
-  //     return indices;
-  //   }
-
-  //   function insert(str: string, index: number, value: string) {
-  //     return str.substr(0, index) + value + str.substr(index);
-  //   }
-
-  //   let quoteindex = getIndicesOf("'", str);
-
-  //   for (let idx = quoteindex.length; idx > 0; idx--) {
-  //     str = insert(str, quoteindex[idx - 1], "'");
-  //   }
-
-  //   return str;
-  // }
-
   const defaultTree = (tree: Select) => {
     let value: any;
     let columnNameList: string[] = [];
@@ -200,125 +170,11 @@ function rebuildFromTree(
     return defaultTree(tree);
   }
   const sample = dataList[0];
-  // console.log(sample);
-
-  // if (sample.hasOwnProperty("properties")) {
-  //   for (let [key, value] of Object.entries(sample.properties)) {
-  //     listColumns.push({
-  //       expr: {
-  //         type: "column_ref",
-  //         table: null,
-  //         column: key,
-  //       },
-  //       as: null,
-  //     });
-  //   }
-  // }
-
-  // if (sample.hasOwnProperty("geometry")) {
-  //   listColumns.push({
-  //     expr: {
-  //       type: "function",
-  //       name: "ST_AsText",
-  //       args: {
-  //         type: "expr_list",
-  //         value: [
-  //           {
-  //             type: "function",
-  //             name: "ST_GeomFromGeoJSON",
-  //             args: {
-  //               type: "expr_list",
-  //               value: [
-  //                 {
-  //                   type: "column_ref",
-  //                   table: null,
-  //                   column: "geometry",
-  //                 },
-  //               ],
-  //             },
-  //           },
-  //         ],
-  //       },
-  //     },
-  //     as: "geometry",
-  //   });
-  // }
 
   selectTree.columns = driver.addSelectTreeColumnsRebuild(sample, listColumns);
-  // console.log("asd");
-
-  // let columns: any[] = [];
-  // let mapType = {} as any;
-  // if (sample.hasOwnProperty("properties")) {
-  //   for (let [key, value] of Object.entries(sample.properties)) {
-  //     columns.push(key);
-  //     if (typeof value === "string") {
-  //       mapType[key] = "string";
-  //     } else if (typeof value === "number") {
-  //       mapType[key] = "number";
-  //     } else {
-  //       mapType[key] = "null";
-  //     }
-  //   }
-  // }
 
   let { columns, mapType } = driver.addColumnAndMapKeyRebuild(sample);
-  // console.log("asd");
 
-  // let rows: any[] = [];
-  // for (const data of dataList) {
-  //   let row: any = {
-  //     type: "row_value",
-  //     keyword: true,
-  //     value: [],
-  //   };
-  //   if (data.hasOwnProperty("properties")) {
-  //     for (const column of columns) {
-  //       const { properties } = data;
-  //       if (properties.hasOwnProperty(column)) {
-  //         let value = properties[column];
-  //         if (mapType[column] === "string") {
-  //           if (value === null) {
-  //             value = "";
-  //           } else if (typeof value !== "string") {
-  //             value = value.toString();
-  //           }
-  //           if (value.includes("'")) {
-  //             value = doubleTheQuote(value);
-  //           }
-  //         }
-  //         if (value == null) {
-  //           value = 0;
-  //         }
-
-  //         row.value.push({
-  //           type: mapType[column],
-  //           value: value,
-  //         });
-  //       } else {
-  //         row.value.push({
-  //           type: mapType[column],
-  //           value: null,
-  //         });
-  //       }
-  //     }
-  //   } else {
-  //     for (const column of columns) {
-  //       row.value.push({
-  //         type: mapType[column],
-  //         value: null,
-  //       });
-  //     }
-  //   }
-  //   if (data.hasOwnProperty("geometry")) {
-  //     row.value.push({
-  //       type: "string",
-  //       value: JSON.stringify(data.geometry),
-  //       // value: "a"
-  //     });
-  //   }
-  //   rows.push(row);
-  // }
   let rows = driver.addRowValuesRebuild(dataList, columns, mapType);
   // console.log("asd");
 
@@ -416,11 +272,62 @@ function rebuildJoinedWhere(where: any, joinAs: string, driver: Extension) {
   return where;
 }
 
+function rebuildFunctionColumns(columns: any[], funcColumns: any[]) {
+  if (funcColumns.length == 0) {
+    return columns;
+  }
+  return columns.map((val: any) => {
+    if (val.expr.type == "aggr_func") {
+      const isAggrFunctionSupported = funcColumns.find(
+        (el: any) =>
+          el.func_name == val.expr.name.toLowerCase() &&
+          el.table == val.expr.args.expr.table &&
+          el.column == val.expr.args.expr.column
+      );
+      if (isAggrFunctionSupported) {
+        return {
+          expr: {
+            type: "column_ref",
+            table: val.expr.args.expr.table,
+            column: `_func__${val.expr.name.toLowerCase()}__${
+              val.expr.args.expr.column
+            }`,
+          },
+          as: null,
+        };
+      }
+    }
+    if (val.expr.type == "function") {
+      const isProjectionFunctionSupported = funcColumns.find(
+        (el: any) =>
+          val.expr.args.value.length == 1 &&
+          el.func_name == val.expr.name.toLowerCase() &&
+          el.table == val.expr.args.value[0].table &&
+          el.column == val.expr.args.value[0].column
+      );
+      if (isProjectionFunctionSupported) {
+        return {
+          expr: {
+            type: "column_ref",
+            table: val.expr.args.value[0].table,
+            column: `_func__${val.expr.name.toLowerCase()}__${
+              val.expr.args.value[0].column
+            }`,
+          },
+          as: null,
+        };
+      }
+    }
+    return val;
+  });
+}
+
 function rebuildTree(
   tree: Select,
   dataList: any[],
   unsupportedClauses: any[],
   mapColumnsPerTable: Map<string, Set<string>>,
+  funcColumns: any[],
   driver: Extension
 ): Select {
   const oldTree = _.cloneDeep(tree);
@@ -451,6 +358,14 @@ function rebuildTree(
   );
 
   newTree.columns = rebuildJoinedColumn(newTree, joined, driver);
+  if (newTree.columns != "*") {
+    newTree.columns = rebuildFunctionColumns(newTree.columns, funcColumns);
+  }
+  if (driver.constructGroupByQuery) {
+    newTree.groupby = null;
+  }
+  // console.log(newTree.columns, funcColumns);
+
   // console.log(JSON.stringify(newTree.columns, null, 2));
 
   // console.log(JSON.stringify(newTree, null, 2));
@@ -466,7 +381,7 @@ function isJoined(oldTree: Select) {
     oldTree.from.forEach(element => {
       // console.log(element);
 
-      if (element.join && element.on) {
+      if (element.join && element.on && element.join != "FULL JOIN") {
         joined = true;
         return;
       }

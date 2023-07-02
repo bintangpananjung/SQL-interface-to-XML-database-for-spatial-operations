@@ -45,6 +45,7 @@ async function getData(
   // console.log(groupWhere);
   let selectionQueryList: any[] = [];
   let projectionQueryList: any[] = [];
+  let groupbyQueryList: any[] = [];
 
   collections.forEach((col, idx) => {
     const { as } = col;
@@ -55,26 +56,38 @@ async function getData(
     const columns = mapColumnsPerTable.has(as)
       ? mapColumnsPerTable.get(as)!
       : new Set<string>();
+    let groupbyQuery = "";
+    if (driver.constructGroupByQuery) {
+      const groupbyCol = tree.groupby?.filter(
+        val => val.type == "column_ref" && val.table == as
+      );
+      // console.log(groupbyCol, "groupbyCol");
+
+      groupbyQuery = driver.constructGroupByQuery(groupbyCol, col);
+    }
 
     const projectionQuery = driver.constructProjectionQuery(columns, col);
-    if (!driver.canJoin) {
+    if (!driver.canJoin || collections.length != 2) {
       const result = driver.getResult(
         col.name,
         selectionQuery,
-        projectionQuery
+        projectionQuery,
+        groupbyQuery
       );
       resultPromise.push(result);
     } else {
       selectionQueryList.push(selectionQuery);
       projectionQueryList.push(projectionQuery);
+      groupbyQueryList.push(groupbyQuery);
     }
   });
   let getResultTime = new Date().getTime();
-  if (driver.canJoin) {
+  if (driver.canJoin && collections.length == 2) {
     const result = driver.getResult(
       collections,
       selectionQueryList,
       projectionQueryList,
+      groupbyQueryList,
       columnAs
     );
     resultPromise.push(result);

@@ -12,7 +12,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
   supportedXMLExtensionType = ["gml"];
   spatialModuleNamespaces = [];
   spatialNamespace: { prefix: string; namespace: string };
-  canJoin: boolean = false;
+  canJoin: boolean = true;
   supportedProjectionFunctions: {
     regex: RegExp;
     name: string;
@@ -172,10 +172,11 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
   }
 
   async getResult(
-    collection: any[],
-    where: any[],
-    projection: any[],
-    columnAs: any[]
+    collection: string | any[],
+    where: string | any[],
+    projection: string | any[],
+    groupby: string | any[],
+    columnAs?: any | undefined
   ): Promise<any> {
     if (!this.client) {
       await this.connect();
@@ -187,7 +188,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
 
     try {
       const query = await this.client.queries.read(
-        this.constructXQuery(collection, where, projection, columnAs),
+        this.constructXQuery(collection, where, projection, groupby, columnAs),
         {
           "omit-xml-declaration": "no",
           "insert-final-newline": "yes",

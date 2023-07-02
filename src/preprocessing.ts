@@ -1,6 +1,6 @@
 import { From, Parser, Select } from "flora-sql-parser";
 import { cond, result } from "lodash";
-import { Extension } from "../extension/extension";
+import { Extension, XMLConfig } from "../extension/extension";
 import { DEFAULT_TABLE } from "./constant";
 import { rebuildWhere } from "./sqlrebuilder";
 
@@ -100,9 +100,23 @@ function filterWhereStatement(
       let table = "";
       for (const pattern of regexPatterns) {
         const funcStr = astToFuncStr(ast);
-        pattern.lastIndex = 0;
-        const result = pattern.exec(funcStr);
+        pattern.regex.lastIndex = 0;
+        const result = pattern.regex.exec(funcStr);
         if (result == null) {
+          continue;
+        }
+        if (pattern.version) {
+          const version = pattern.version.find(val =>
+            ((driver as any).version as XMLConfig).version.some(el => el == val)
+          );
+          if (!version) {
+            continue;
+          }
+        }
+        const isFunctionMatch = pattern.matches.find(
+          val => val == result.groups!.fname
+        );
+        if (!isFunctionMatch) {
           continue;
         }
         isSupported = true;

@@ -1,13 +1,18 @@
 import { Column, From } from "flora-sql-parser";
-import { dropRight, isArray, subtract, values } from "lodash";
+import { dropRight, isArray, subtract, template, values } from "lodash";
 import { types } from "pg";
 import { XMLInterface, GeoJSON, Supported, XMLConfig } from "./extension";
 import { DOMParserImpl as dom } from "xmldom-ts";
 import * as xpath from "xpath-ts";
 import { doubleTheQuote } from "../src/sqlrebuilder";
+import { proj_func_args_1 } from "../src/constant";
 
 abstract class XMLExtension<T> implements XMLInterface {
-  abstract supportedSelectionFunctions: RegExp[];
+  abstract supportedSelectionFunctions: {
+    regex: RegExp;
+    matches: string[];
+    version?: string[];
+  }[];
   abstract spatialModuleNamespaces: any[];
   abstract supportedXMLExtensionType: string[];
   abstract supportedSpatialType: { extType: string; types: string[] }[];
@@ -31,6 +36,7 @@ abstract class XMLExtension<T> implements XMLInterface {
     collection: string | any[],
     where: string | any[],
     projection: string | any[],
+    groupby: string | any[],
     columnAs?: any | undefined
   ): Promise<any>;
   abstract getDbName(): string;
@@ -478,7 +484,7 @@ abstract class XMLExtension<T> implements XMLInterface {
         result.retrieveCustomDataCondition = `else (
           if($${varName}j/data()='' or fn:exists($${varName}j/text()))
           then(
-          for $${varName}k in ${projection.childProjection}
+          for $${varName}k in ${projection.childColumns}
           let $retrieve_condition :=$${varName}k/data()='' or fn:exists($${varName}k/text())
           let $has_child :=fn:exists($${varName}k[count(*)>0])
           return element {if($retrieve_condition) then($${varName}k/local-name()) else(concat('_attribute__',$${varName}j/local-name(),'__',$${varName}k/local-name()))}{if($retrieve_condition) then($${varName}k/text()) else(if($has_child)then($${varName}k/*)else($${varName}k/data()))}
@@ -499,11 +505,11 @@ abstract class XMLExtension<T> implements XMLInterface {
           " or "
         )}])`;
         result.retrieveCustomDataCondition = `else if($${varName}${subVarName}/local-name()='ExtendedData') then(
-          for $extendeddata in $${varName}j/*/${projection.projection}
+          for $extendeddata in $${varName}j/*/${projection.columns}
           return
           if($extendeddata/data()='' or fn:exists($extendeddata/text()))
           then(
-          for $${varName}k in ${projection.childProjection}
+          for $${varName}k in ${projection.childColumns}
           let $retrieve_condition :=$${varName}k/data()='' or fn:exists($${varName}k/text())
           let $has_child :=fn:exists($${varName}k[count(*)>0])
           return element {if($retrieve_condition) then($${varName}k/@name) else(concat('_attribute__',$extendeddata/@name,'__',$${varName}k/local-name()))}{if($retrieve_condition) then($${varName}k/text()) else(if($has_child)then($${varName}k/*)else($${varName}k/data()))}
@@ -524,6 +530,7 @@ abstract class XMLExtension<T> implements XMLInterface {
     collection: any[],
     where: any[],
     projection: any[],
+    groupby: any,
     columnAs: any,
     constructTableQuery: any,
     moduleVersion: any
@@ -641,7 +648,7 @@ abstract class XMLExtension<T> implements XMLInterface {
             result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${
               element.table
             }[local-name()=$col${idx}]/${
-              moduleVersion?.getSTAsTextfunctext() ? "text()" : "*"
+              moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
             }}`;
             if (idx < columnAsArray.length - 1) {
               result += ",";
@@ -738,7 +745,7 @@ abstract class XMLExtension<T> implements XMLInterface {
             result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${
               element.table
             }[local-name()=$col${idx}]/${
-              moduleVersion?.getSTAsTextfunctext() ? "text()" : "*"
+              moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
             }}`;
             if (idx < columnAsArray.length - 1) {
               result += ",";
@@ -774,7 +781,7 @@ abstract class XMLExtension<T> implements XMLInterface {
         this.db_name
       )}//${extensionQuery.path}${where[0].length > 0 ? `[${where[0]}]` : ""}`;
       //get columns for projecting the null values
-      result += `let $column${collection[1].name} := for $${
+      result += ` let $column${collection[1].name} := for $${
         collection[1].name
       }col in ${this.version.getDocFunc(collection[1].name, this.db_name)}//${
         extensionQuery.path
@@ -828,7 +835,117 @@ abstract class XMLExtension<T> implements XMLInterface {
             result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{if(fn:exists($element${
               element.table
             }))then($element${element.table}[local-name()=$col${idx}]/${
-              moduleVersion?.getSTAsTextfunctext() ? "text()" : "*"
+              moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
+            })else()}`;
+            if (idx < columnAsArray.length - 1) {
+              result += ",";
+            }
+          });
+          result += `)}`;
+        }
+      }
+    }
+    if (joinType == "RIGHT JOIN") {
+      let collectionReversed = collection.reverse();
+      let whereReversed = where.reverse();
+      let projectionReversed = projection.reverse();
+      let spatialTypes = this.supportedSpatialType.find(element => {
+        return element.extType == this.spatialNamespace.prefix;
+      });
+      let tempSpatialTypes: any[] = [];
+      spatialTypes?.types.forEach(element => {
+        tempSpatialTypes.push(`local-name()='${element}'`);
+      });
+      const extensionQuery = this.constructExtensionQuery(
+        this.spatialNamespace.prefix,
+        collectionReversed[0].name,
+        "j",
+        projection
+      );
+      const colQueryGeo = this.constructExtensionQuery(
+        this.spatialNamespace.prefix,
+        collectionReversed[1].name,
+        "col",
+        projectionReversed
+      );
+      result += ` for $${
+        collectionReversed[0].name
+      }i in ${this.version.getDocFunc(
+        collectionReversed[0].name,
+        this.db_name
+      )}//${extensionQuery.path}${
+        whereReversed[0].length > 0 ? `[${whereReversed[0]}]` : ""
+      }`;
+      //get columns for projecting the null values
+      result += ` let $column${collectionReversed[1].name} := for $${
+        collectionReversed[1].name
+      }col in ${this.version.getDocFunc(
+        collectionReversed[1].name,
+        this.db_name
+      )}//${extensionQuery.path}[1]/* return element{if(${
+        colQueryGeo.spatialSelectionNoCondition
+      })then('geometry')else($${
+        collectionReversed[1].name
+      }col/local-name())}{}`;
+      //loop in second table joined with table 1
+      result += `let $element${collectionReversed[1].name} := for $${
+        collectionReversed[1].name
+      }i in ${this.version.getDocFunc(
+        collectionReversed[1].name,
+        this.db_name
+      )}//${extensionQuery.path}${
+        whereReversed[1].length > 0 ? `[${whereReversed[1]}]` : ""
+      }`;
+      result = constructTableQuery(
+        result,
+        collectionReversed[1],
+        projectionReversed[1]
+      );
+      result += ` where ${joinOn} return $element${collectionReversed[1].name}`;
+      result = constructTableQuery(
+        result,
+        collectionReversed[0],
+        projectionReversed[0]
+      );
+      if (columnAs) {
+        if (columnAs == "*") {
+          result += ` let $element := element {'result'}{(`;
+          collectionReversed.forEach((val, idx) => {
+            if (idx > 0) {
+              result += `if(fn:exists($element${val.name})) then($element${val.name}) else($column${val.name})`;
+            } else {
+              result += `$element${val.name}`;
+            }
+            if (idx < collectionReversed.length - 1) {
+              result += `,`;
+            }
+          });
+          result += `)}`;
+          result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
+        } else {
+          const columnAsArray = Array.from(columnAs, ([table, col]) => ({
+            table,
+            col,
+          })).reverse();
+
+          columnAsArray.forEach((element, index) => {
+            result += ` let $mapColumn${index} := map {`;
+            // const columns = columnAs.get(key);
+
+            element.col.forEach((val: any, idxcol: any) => {
+              result += `'${val.column}' := '${val.as}'`;
+              if (idxcol < element.col.length - 1) {
+                result += ",";
+              }
+            });
+            result += `} `;
+          });
+          result += ` return element{'result'}{(`;
+          columnAsArray.forEach((element, idx) => {
+            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{if(fn:exists($element${
+              element.table
+            }))then($element${element.table}[local-name()=$col${idx}]/${
+              moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
             })else()}`;
             if (idx < columnAsArray.length - 1) {
               result += ",";
@@ -845,6 +962,7 @@ abstract class XMLExtension<T> implements XMLInterface {
     collection: any[] | any,
     where: any[] | any,
     projection: any[] | any,
+    groupby: any[] | any,
     columnAs: any
   ) => {
     const constructTableQuery = (
@@ -859,8 +977,8 @@ abstract class XMLExtension<T> implements XMLInterface {
         projection
       );
       result += ` let $element${collection.name} := `;
-      result += `for $${collection.name}j in $${collection.name}i/${
-        projection.projection
+      result += `for $${collection.name}j in $${collection.name}i[1]/${
+        projection.columns
       }
       return
       if(${extensionQuery.spatialSelectionNoCondition}) then (
@@ -921,10 +1039,30 @@ abstract class XMLExtension<T> implements XMLInterface {
         collection,
         this.db_name
       )}//${extensionQuery.path}${whereQuery}`;
-      result = constructTableQuery(result, { name: collection }, projection);
-      result += `return element {'result'}
+      // result = constructTableQuery(result, { name: collection }, projection);
+      // result += `return element {'result'}
+      // {
+      //   $element${collection}
+      // }`;
+      if (groupby.length > 0) {
+        result += ` group by $${collection}group := ${groupby} `;
+      }
+      let projectionResult = "";
+      if (projection.columns.length > 0 && projection.childColumns.length > 0) {
+        result = constructTableQuery(result, { name: collection }, projection);
+        projectionResult = `$element${collection}`;
+      }
+
+      let funcProjQuery = "";
+      if (projection.funcColumns.length > 0) {
+        funcProjQuery += `${projection.funcColumns}`;
+      }
+
+      result += ` return element {'result'}
       { 
-        $element${collection}
+        (${funcProjQuery}${
+        projectionResult.length > 0 && funcProjQuery.length > 0 ? `,` : ``
+      }${projectionResult})
       }`;
     } else {
       if (collection.length > 1 && where.length > 1 && projection.length > 1) {
@@ -933,6 +1071,7 @@ abstract class XMLExtension<T> implements XMLInterface {
           collection,
           where,
           projection,
+          groupby,
           columnAs,
           constructTableQuery,
           moduleVersion
@@ -953,16 +1092,33 @@ abstract class XMLExtension<T> implements XMLInterface {
           collection[0].name,
           this.db_name
         )}//${extensionQuery.path}${whereQuery}`;
-        result = constructTableQuery(result, collection[0], projection[0]);
+        if (groupby[0].length > 0) {
+          result += ` group by $${collection[0].name}group := ${groupby[0]} `;
+        }
+        let projectionResult = "";
+        if (
+          projection[0].columns.length > 0 &&
+          projection[0].childColumns.length > 0
+        ) {
+          result = constructTableQuery(result, collection[0], projection[0]);
+          projectionResult = `$element${collection[0].name}`;
+        }
 
-        result += `return element {'result'}
+        let funcProjQuery = "";
+        if (projection[0].funcColumns.length > 0) {
+          funcProjQuery += `${projection[0].funcColumns}`;
+        }
+
+        result += ` return element {'result'}
         { 
-          $element${collection[0].name}
+          (${funcProjQuery}${
+          projectionResult.length > 0 && funcProjQuery.length > 0 ? `,` : ``
+        }${projectionResult})
         }`;
       }
     }
 
-    // console.log(result);
+    console.log(result);
     return result;
     // `for $i in ${this.version.getDocFunc(
     //   collection,
@@ -1101,7 +1257,7 @@ abstract class XMLExtension<T> implements XMLInterface {
     };
 
     const selection = recursion(where, 0, 0);
-    // console.log(selection);
+    // console.log(selection, "selection");
 
     return selection;
   }
@@ -1116,19 +1272,19 @@ abstract class XMLExtension<T> implements XMLInterface {
     }
     if (columns.size == 0) {
       return {
-        projection: "(*|@*)",
-        childProjection: `($${childProjection}|$${childProjection}/@*)`,
+        columns: "(*|@*)",
+        childColumns: `($${childProjection}|$${childProjection}/@*)`,
+        funcColumns: "",
       };
     }
-    let result = `(`;
+    let tempresultArr: string[] = [];
+    let tempchildResultArr = [`$${childProjection}`];
     const ignoreQName = "*:";
-    if (this.spatialNamespace.prefix == "kml") {
-      result += `*[`;
-    }
-    let childResult = `($${childProjection}`;
-
+    let funcArr: string[] = [];
     let arrColumns = [...columns];
     arrColumns.forEach((column, index) => {
+      let tempresult = ``;
+      let tempchildResult = ``;
       if (column == "geometry") {
         // console.log(this.spatialNamespace.prefix);
 
@@ -1141,57 +1297,98 @@ abstract class XMLExtension<T> implements XMLInterface {
         });
 
         if (this.spatialNamespace.prefix == "gml") {
-          result += `*/*[${tempSpatialTypes.join(" or ")}]`;
+          tempresult += `*/*[${tempSpatialTypes.join(" or ")}]`;
         }
         if (this.spatialNamespace.prefix == "kml") {
-          result += `${tempSpatialTypes.join(" or ")}`;
+          tempresult += `${tempSpatialTypes.join(" or ")}`;
         }
       } else {
-        if (column.includes("_attribute__")) {
+        const pattern_func = proj_func_args_1.exec(column);
+        if (pattern_func) {
+          const func_detail = pattern_func.groups!;
+          const func_projection = this.supportedProjectionFunctions.find(
+            val => val.postGISName == func_detail.fname
+          )!;
+          let pathProjection = "";
+          if (this.spatialNamespace.prefix == "gml") {
+            pathProjection += `/*:${func_detail.colname}`;
+          }
+          if (this.spatialNamespace.prefix == "kml") {
+            pathProjection += `/*:ExtendedData/*[@name='${func_detail.colname}']`;
+          }
+          funcArr.push(`element{'_func__${func_projection.name}__${
+            func_detail.colname
+          }'}{${func_projection.name}($${collection.name}i${
+            func_detail.colname == "*" ? "" : pathProjection
+          }
+            )}`);
+        } else if (column.includes("_attribute__")) {
           let columnAttr = column.split("__");
           if (columnAttr.length == 2) {
-            result += `@${columnAttr[1]}`;
+            tempresult += `@${columnAttr[1]}`;
           }
           if (columnAttr.length == 3) {
-            if (index == 0) {
-              childResult += "|";
-            }
-            childResult += `$${childProjection}[local-name()='${columnAttr[1]}']/@${columnAttr[2]}`;
+            tempchildResult += `$${childProjection}[local-name()='${columnAttr[1]}']/@${columnAttr[2]}`;
           }
         } else {
           if (this.spatialNamespace.prefix == "gml") {
-            result += `${ignoreQName}${column}`;
+            tempresult += `${ignoreQName}${column}`;
           }
           if (this.spatialNamespace.prefix == "kml") {
-            result += `@name='${column}'`;
+            tempresult += `@name='${column}'`;
           }
         }
       }
-      if (index < arrColumns.length - 1) {
-        if (this.spatialNamespace.prefix == "gml") {
-          result += ` | `;
-        }
-        if (this.spatialNamespace.prefix == "kml") {
-          result += ` or `;
-        }
+      if (tempresult.length > 0) {
+        tempresultArr.push(tempresult);
       }
-      // else {
-
-      //     result += ` | ExtendedData`;
-      //   }
-      // }
+      if (tempchildResult.length > 0) {
+        tempchildResultArr.push(tempchildResult);
+      }
     });
-    if (this.spatialNamespace.prefix == "kml") {
-      result += "] | *:ExtendedData";
+    let result = ``;
+    let childResult = ``;
+    if (tempresultArr.length > 0) {
+      if (this.spatialNamespace.prefix == "kml") {
+        result = `(*[${tempresultArr.join(" or ")}] | *:ExtendedData)`;
+      }
+      if (this.spatialNamespace.prefix == "gml") {
+        result = `(${tempresultArr.join(" | ")})`;
+      }
     }
-    result = result + ")";
-    childResult += ")";
-    // for (const column of columns) {
-    //   result += `${ignoreQName}${column}`;
-    // }
+    if (tempchildResultArr.length > 0) {
+      childResult = `(${tempchildResultArr.join(" | ")})`;
+    }
+    // console.log(tempresultArr, "tempres", tempchildResultArr, "tempchild");
+    let funcResult = funcArr.join(",");
     // console.log(result, childResult);
 
-    return { projection: result, childProjection: childResult };
+    return {
+      columns: result,
+      childColumns: childResult,
+      funcColumns: funcResult,
+    };
+  }
+  constructGroupByQuery(groupby: any, collection: any): string {
+    if (!groupby || groupby.length == 0) {
+      return "";
+    }
+    let groupbyQuery = ``;
+    groupby.forEach((el: any, idx: number) => {
+      groupbyQuery += `$${collection.name}i/`;
+      if (this.spatialNamespace.prefix == "gml") {
+        groupbyQuery += `*:${el.column}`;
+      }
+      if (this.spatialNamespace.prefix == "kml") {
+        groupbyQuery += `*:ExtendedData/*[@name='${el.column}']`;
+      }
+      if (idx < groupby.length - 1) {
+        groupbyQuery += `,`;
+      }
+    });
+    console.log(groupbyQuery, "groupbyQuery");
+
+    return groupbyQuery;
   }
 }
 

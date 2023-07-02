@@ -34,7 +34,11 @@ interface Supported {
 
 interface Extension {
   supportedTypes: string[];
-  supportedSelectionFunctions: RegExp[];
+  supportedSelectionFunctions: {
+    regex: RegExp;
+    matches: string[];
+    version?: string[];
+  }[];
   supportedProjectionFunctions: {
     regex: RegExp;
     name: string;
@@ -46,16 +50,19 @@ interface Extension {
   extensionType: string;
   supportPreExecutionQuery: boolean;
   canJoin: boolean;
+  // canAggregationAndGroupBy: boolean;
 
   connect(): void;
   constructSelectionQuery(where: any): any;
   constructProjectionQuery(columns: Set<string>, collection: any): string;
+  constructGroupByQuery?(groupby: any, collection: any): string;
   executePreExecutionQuery?(collection: string): Promise<void>;
   getAllFields(col_name: string): Promise<string[]>;
   getResult(
     collection: string | any[],
     where: string | any[],
     projection: string | any[],
+    groupby: string | any[],
     columnAs?: any | undefined
   ): Promise<any>;
   getDbName(): string;
@@ -106,6 +113,7 @@ interface XMLInterface extends Extension {
     collection: any,
     spatialNamespace: any,
     where: any,
+    groupby: any,
     projection: any
   ): any;
   moduleConfig: XMLConfig[];

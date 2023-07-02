@@ -28,7 +28,11 @@ abstract class JsonExtension<T> implements Extension {
     columns: Set<string>,
     collection: string
   ): string;
-  abstract supportedSelectionFunctions: RegExp[];
+  abstract supportedSelectionFunctions: {
+    regex: RegExp;
+    matches: string[];
+    version?: string[];
+  }[];
   abstract canJoin: boolean;
 
   extensionType = "json";

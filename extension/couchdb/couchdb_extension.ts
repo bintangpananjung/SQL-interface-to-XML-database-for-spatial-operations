@@ -18,8 +18,8 @@ class CouchDbExtension extends JsonExtension<any> {
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
     for (const pattern of this.supportedSelectionFunctions) {
-      pattern.lastIndex = 0;
-      let regResult = pattern.exec(funcStr);
+      pattern.regex.lastIndex = 0;
+      let regResult = pattern.regex.exec(funcStr);
       if (regResult == null) {
         continue;
       }
@@ -37,7 +37,11 @@ class CouchDbExtension extends JsonExtension<any> {
   }
 
   supportedSelectionFunctions = [
-    /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
+    {
+      regex:
+        /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
+      matches: ["mod"],
+    },
   ];
 
   standardizeData(data: any): GeoJSON[] {

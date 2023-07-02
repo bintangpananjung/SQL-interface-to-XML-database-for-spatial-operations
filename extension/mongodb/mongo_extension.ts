@@ -9,8 +9,8 @@ class MongoExtension extends JsonExtension<MongoClient> {
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);
     for (const pattern of this.supportedSelectionFunctions) {
-      pattern.lastIndex = 0;
-      let regResult = pattern.exec(funcStr);
+      pattern.regex.lastIndex = 0;
+      let regResult = pattern.regex.exec(funcStr);
       if (regResult == null) {
         continue;
       }
@@ -37,9 +37,21 @@ class MongoExtension extends JsonExtension<MongoClient> {
   }[] = [];
 
   supportedSelectionFunctions = [
-    /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
-    /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
-    /(?<fname>ST_Distance)\(ST_AsText\(ST_GeomFromGeoJSON\('(?<constant1>.*type.*coordinates.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=) (?<constant2>[0-9\.]*)/g,
+    {
+      regex:
+        /(?<fname>date)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>[=<>]) '(?<constant>.*)'/g,
+      matches: ["date"],
+    },
+    {
+      regex:
+        /(?<fname>ST_Distance)\(ST_AsText\(ST_GeomFromGeoJSON\('(?<constant1>.*type.*coordinates.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=) (?<constant2>[0-9\.]*)/g,
+      matches: ["ST_Distance"],
+    },
+    {
+      regex:
+        /(?<fname>mod)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+), (?<constant1>[0-9]+)\) (?<operator>[=]) (?<constant2>[0-9]*)/g,
+      matches: ["mod"],
+    },
   ];
 
   constructor() {

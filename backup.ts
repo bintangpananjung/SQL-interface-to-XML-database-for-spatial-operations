@@ -447,7 +447,8 @@ class PostgisExtension {
     const result = await this.driver.getResult(
       tables as any,
       selection,
-      alias as any
+      alias as any,
+      ""
       // table_id as string
     );
     // console.log(`Result : ${JSON.stringify(result)}`);
