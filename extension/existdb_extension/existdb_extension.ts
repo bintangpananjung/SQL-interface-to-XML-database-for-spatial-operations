@@ -87,10 +87,12 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     );
     if (moduleInVersion) {
       this.version = moduleInVersion;
+      return version;
     } else {
       throw new Error(
         "This ExistDB version is still not implemented in this program"
       );
+      return "";
     }
   }
 
@@ -182,7 +184,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
       await this.connect();
     }
     let result: any[] = [];
-    console.log("yes");
+    // console.log("yes");
 
     // console.log(this.constructXQuery(collection, where, projection, columnAs));
 
@@ -206,13 +208,13 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
         result.push(node.toString());
       });
 
-      console.log(result[0]);
+      // console.log(result[0]);
     } catch (error) {
-      console.log(error);
+      throw Error(`getResult error : ${error}`);
     }
-    // if (result.length == 0) {
-    //   throw Error("no data found");
-    // }
+    if (result.length == 0) {
+      throw Error("no data found");
+    }
     return result;
   }
 

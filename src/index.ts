@@ -26,8 +26,8 @@ class PostgisExtension {
 
   convertToSQL(tree: Select): string {
     // console.log(JSON.stringify(tree, null, 2));
-
     let query = util.astToSQL(JSON.parse(JSON.stringify(tree)));
+
     query = query.replace(/\\r\\n/g, "");
     query = query.replace(/\\/g, "");
     query = query.replace(/`/g, "");
@@ -42,11 +42,6 @@ class PostgisExtension {
   async finalresult(tree: Select) {
     let getResultTime = new Date().getTime();
     let query = this.convertToSQL(tree);
-    console.log(
-      `waktu eksekusi pada PostgreSQL adalah ${
-        new Date().getTime() - getResultTime
-      }ms`
-    );
 
     // console.log(JSON.stringify(tree, null, 2));
     // console.log(query);
@@ -54,6 +49,11 @@ class PostgisExtension {
     query = query.replace(/ROW/g, "");
     let pgclient = await Pool.connect();
     let result = await pgclient.query(query);
+    console.log(
+      `waktu eksekusi pada PostgreSQL adalah ${
+        new Date().getTime() - getResultTime
+      }ms`
+    );
     pgclient.release();
     return result;
   }

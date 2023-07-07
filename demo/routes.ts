@@ -29,6 +29,45 @@ router.get("/", async (req, res) => {
   if ("dbms" in req.query) {
     dbms = req.query.dbms as string;
   }
+  let gis;
+  switch (dbms) {
+    case "mongodb":
+      gis = mongoGis;
+      break;
+    case "couchdb":
+      gis = couchGis;
+      break;
+    case "basex":
+      gis = basexGis;
+      break;
+    case "existdb":
+      gis = existGis;
+      break;
+    default:
+      gis = mongoGis;
+      break;
+  }
+  // const gis = dbms === "mongodb" ? mongoGis : couchGis;
+  // console.log(gis.driver);
+  let version = "";
+  try {
+    if (gis.driver.extensionType == "xml") {
+      version = await (gis.driver as any).initVersion();
+    }
+  } catch (error) {
+    res.render("index", {
+      title,
+      input: "",
+      query: undefined,
+      db: null,
+      listCollections: [],
+      error: error.message,
+      results: undefined,
+      result_geojson: null,
+      dbms,
+      statistic: undefined,
+    });
+  }
   const db = mongoGis.driver.getDbName(); // default
   const listCollections = await mongoGis.driver.getCollectionsName();
   res.render("index", {
@@ -42,6 +81,7 @@ router.get("/", async (req, res) => {
     error: null,
     statistic: undefined,
     dbms,
+    version: version,
   });
 });
 
@@ -68,9 +108,10 @@ router.post("/", async (req, res) => {
   }
   // const gis = dbms === "mongodb" ? mongoGis : couchGis;
   // console.log(gis.driver);
+  let version = "";
   try {
     if (gis.driver.extensionType == "xml") {
-      await (gis.driver as any).initVersion();
+      version = await (gis.driver as any).initVersion();
     }
   } catch (error) {
     res.render("index", {
@@ -115,6 +156,7 @@ router.post("/", async (req, res) => {
       },
       dbms,
       totalGetField: results?.totalGetField,
+      version: version,
     });
   } catch (e) {
     res.render("index", {
@@ -128,6 +170,7 @@ router.post("/", async (req, res) => {
       result_geojson: null,
       dbms,
       statistic: undefined,
+      version: version,
     });
   }
 });

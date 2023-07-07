@@ -95,12 +95,11 @@ interface XMLInterface extends Extension {
   constructExtensionQuery(
     extension: any,
     varName: string,
-    subVarName: string,
+    moduleVersion: any,
     projection?: any
   ): {
     path: string;
-    spatialSelectionNoCondition: string;
-    spatialSelectionWithCondition: string;
+    spatialTypeSelection: string;
     retrieveCustomDataCondition: string;
   };
   // constructJoinQuery(

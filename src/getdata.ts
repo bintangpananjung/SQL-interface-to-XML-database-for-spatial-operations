@@ -45,7 +45,7 @@ async function getData(
   // console.log(groupWhere);
   let selectionQueryList: any[] = [];
   let projectionQueryList: any[] = [];
-  let groupbyQueryList: any[] = [];
+  // let groupbyQueryList: any[] = [];
 
   collections.forEach((col, idx) => {
     const { as } = col;
@@ -78,16 +78,23 @@ async function getData(
     } else {
       selectionQueryList.push(selectionQuery);
       projectionQueryList.push(projectionQuery);
-      groupbyQueryList.push(groupbyQuery);
+      // groupbyQueryList.push(groupbyQuery);
     }
   });
   let getResultTime = new Date().getTime();
   if (driver.canJoin && collections.length == 2) {
+    let groupbyQuery = ``;
+    if (driver.constructGroupByQuery) {
+      groupbyQuery = driver.constructGroupByQuery(
+        tree.groupby?.filter(val => val.type == "column_ref"),
+        collections
+      );
+    }
     const result = driver.getResult(
       collections,
       selectionQueryList,
       projectionQueryList,
-      groupbyQueryList,
+      groupbyQuery,
       columnAs
     );
     resultPromise.push(result);
@@ -147,7 +154,7 @@ async function getData(
         result,
       });
     }
-    totalData += result.length;
+    totalData += resultList.length;
   }
   // console.log(finalResult[0].table, finalResult[0].as);
 

@@ -237,14 +237,11 @@ function rebuildJoinedColumn(
     return column;
   };
   if (driver.canJoin && newTree.columns != "*" && joined) {
+    // console.log(newTree.columns);
+
     return newTree.columns.map(val => ({
       expr: recursion(val.expr, val.as),
-      // {
-      //   table: newTree.from![0].as,
-      //   type: val.expr.type,
-      //   column: joined && val.as ? val.as : val.expr.column,
-      // }
-      as: val.as ? val.as : val.expr.column,
+      as: val.as ? val.as : val.expr.column ? val.expr.column : null,
     }));
   }
   return newTree.columns;
@@ -272,7 +269,11 @@ function rebuildJoinedWhere(where: any, joinAs: string, driver: Extension) {
   return where;
 }
 
-function rebuildFunctionColumns(columns: any[], funcColumns: any[]) {
+function rebuildFunctionColumns(
+  columns: any[],
+  funcColumns: any[],
+  joined: boolean
+) {
   if (funcColumns.length == 0) {
     return columns;
   }
@@ -288,12 +289,12 @@ function rebuildFunctionColumns(columns: any[], funcColumns: any[]) {
         return {
           expr: {
             type: "column_ref",
-            table: val.expr.args.expr.table,
+            table: joined ? null : val.expr.args.expr.table,
             column: `_func__${val.expr.name.toLowerCase()}__${
               val.expr.args.expr.column
             }`,
           },
-          as: null,
+          as: val.as,
         };
       }
     }
@@ -309,12 +310,12 @@ function rebuildFunctionColumns(columns: any[], funcColumns: any[]) {
         return {
           expr: {
             type: "column_ref",
-            table: val.expr.args.value[0].table,
+            table: joined ? null : val.expr.args.value[0].table,
             column: `_func__${val.expr.name.toLowerCase()}__${
               val.expr.args.value[0].column
             }`,
           },
-          as: null,
+          as: val.as,
         };
       }
     }
@@ -359,7 +360,11 @@ function rebuildTree(
 
   newTree.columns = rebuildJoinedColumn(newTree, joined, driver);
   if (newTree.columns != "*") {
-    newTree.columns = rebuildFunctionColumns(newTree.columns, funcColumns);
+    newTree.columns = rebuildFunctionColumns(
+      newTree.columns,
+      funcColumns,
+      joined
+    );
   }
   if (driver.constructGroupByQuery) {
     newTree.groupby = null;

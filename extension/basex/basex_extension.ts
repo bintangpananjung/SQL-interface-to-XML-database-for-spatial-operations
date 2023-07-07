@@ -192,12 +192,14 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     );
     if (moduleInVersion) {
       this.version = moduleInVersion;
+      return version;
     } else {
       // alert("This BaseX version is still not implemented in this program");
       // location.reload()
       throw new Error(
         "This BaseX version is still not implemented in this program"
       );
+      return "";
     }
   }
 
@@ -325,7 +327,8 @@ class BaseXExtension extends XMLExtension<typeof basex> {
       );
       // console.log(result);
     } catch (error) {
-      console.log(error);
+      // console.log(error);
+      throw Error(`getResult error : ${error}`);
     }
     if (result.length == 0) {
       throw Error("no data found");
