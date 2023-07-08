@@ -111,7 +111,11 @@ abstract class XMLExtension<T> implements XMLInterface {
         );
 
         for (const column of columns) {
-          const nodes: any = xpath.select(`/result/${column}`, doc);
+          let path = column;
+          if (!column.includes("_attribute__")) {
+            path = `*[@group='${column}'][1]`;
+          }
+          const nodes: any = xpath.select(`/result/${path}`, doc);
 
           if (nodes.length > 0) {
             const node: any = nodes[0];
@@ -461,11 +465,13 @@ abstract class XMLExtension<T> implements XMLInterface {
     path: string;
     spatialTypeSelection: string;
     retrieveCustomDataCondition: string;
+    retrieveCustomDataConditionWithAttr: string;
   } {
     const result = {
       path: "",
       spatialTypeSelection: "",
       retrieveCustomDataCondition: "",
+      retrieveCustomDataConditionWithAttr: "",
     };
     let spatialTypes = this.supportedSpatialType.find(element => {
       return element.extType == extension;
@@ -479,11 +485,14 @@ abstract class XMLExtension<T> implements XMLInterface {
         result.path = "gml:featureMember/*";
         result.spatialTypeSelection = `if(fn:exists($${collection}j/*[${tempSpatialTypes.join(
           " or "
-        )}])) then (element {'geometry'} {${
-          moduleVersion?.getSTAsTextfunc
-            ? moduleVersion.getSTAsTextfunc(`$${collection}j/*`)
-            : `$${collection}j/*`
-        }}
+        )}])) then (element {'geometry'} {
+          attribute{'order'}{1},
+          attribute{'group'}{'geometry'},
+          ${
+            moduleVersion?.getSTAsTextfunc
+              ? moduleVersion.getSTAsTextfunc(`$${collection}j/*`)
+              : `$${collection}j/*`
+          }}
         )`;
         result.retrieveCustomDataCondition = `
         else (
@@ -506,29 +515,52 @@ abstract class XMLExtension<T> implements XMLInterface {
             element{concat('_attribute__',$${collection}j/local-name())}{$${collection}j/data()}
           )
         )`;
-        // else (
-        //   if($${collection}j/data()='' or fn:exists($${collection}j/text()))
-        //   then(
-        //   for $${collection}k in ${projection.childColumns}
-        //   let $retrieve_condition :=$${collection}k/data()='' or fn:exists($${collection}k/text())
-        //   let $has_child :=fn:exists($${collection}k[count(*)>0])
-        //   return element {if($retrieve_condition) then($${collection}k/local-name()) else(concat('_attribute__',$${collection}j/local-name(),'__',$${collection}k/local-name()))}{if($retrieve_condition) then($${collection}k/text()) else(if($has_child)then($${collection}k/*)else($${collection}k/data()))}
-        //   )
-        //   else(
-        //     element {if(fn:exists($${collection}j[count(*)>0]))then($${collection}j/local-name())else(concat('_attribute__',$${collection}j/local-name()))}{if(fn:exists($${collection}j[count(*)>0]))then($${collection}j/*)else($${collection}j/data())}
-        //   )
-        // )
+        result.retrieveCustomDataConditionWithAttr = `
+        else (
+          if(not($${collection}j instance of attribute()))
+          then(
+            for $${collection}k in (${projection.childColumns})
+            return if(not($${collection}k instance of attribute()))
+            then(
+                element{$${collection}k/local-name()}{
+                attribute{'order'}{1},
+                attribute{'group'}{$${collection}k/local-name()},
+                if(count($${collection}k/*)>0)
+                then($${collection}k/*)
+                else($${collection}k/text())
+              }
+            )
+            else(
+              element{concat('_attribute__',$${collection}j/local-name(),'__',$${collection}k/local-name())}{
+                attribute{'order'}{3},
+                attribute{'group'}{$${collection}k/local-name()},
+                $${collection}k/data()
+              }
+            )
+          )
+          else(
+            element{concat('_attribute__',$${collection}j/local-name())}{
+              attribute{'order'}{2},
+              attribute{'group'}{$${collection}j/local-name()},
+              $${collection}j/data()
+            }
+          )
+        )
+        `;
         break;
       case "kml":
         result.path = "kml:Placemark";
         result.spatialTypeSelection = `if(fn:exists($${collection}j[${tempSpatialTypes.join(
           " or "
         )}]))
-        then (element {'geometry'} {${
-          moduleVersion?.getSTAsTextfunc
-            ? moduleVersion.getSTAsTextfunc(`$${collection}j`)
-            : `$${collection}j`
-        }}
+        then (element {'geometry'} {
+          attribute{'order'}{1},
+          attribute{'group'}{'geometry'},
+          ${
+            moduleVersion?.getSTAsTextfunc
+              ? moduleVersion.getSTAsTextfunc(`$${collection}j`)
+              : `$${collection}j`
+          }}
         )`;
         result.retrieveCustomDataCondition = `
         else if($${collection}j/local-name()='ExtendedData') then(
@@ -539,6 +571,7 @@ abstract class XMLExtension<T> implements XMLInterface {
             then(
                 element{$${collection}k/@name}
                 {
+                  element{$${collection}k/local-name()}{
                   if(count($${collection}k/*)>0)
                   then($${collection}k/*)
                   else($${collection}k/text())
@@ -550,21 +583,32 @@ abstract class XMLExtension<T> implements XMLInterface {
       )
       else(
       )`;
-        // else if($${collection}j/local-name()='ExtendedData') then(
-        //   for $extendeddata in $${collection}j/*/${projection.columns}
-        //   return
-        //   if($extendeddata/data()='' or fn:exists($extendeddata/text()))
-        //   then(
-        //   for $${collection}k in ${projection.childColumns}
-        //   let $retrieve_condition :=$${collection}k/data()='' or fn:exists($${collection}k/text())
-        //   let $has_child :=fn:exists($${collection}k[count(*)>0])
-        //   return element {if($retrieve_condition) then($${collection}k/@name) else(concat('_attribute__',$extendeddata/@name,'__',$${collection}k/local-name()))}{if($retrieve_condition) then($${collection}k/text()) else(if($has_child)then($${collection}k/*)else($${collection}k/data()))}
-        //   )
-        //   else(
-        //     element {if(fn:exists($extendeddata[count(*)>0]))then($extendeddata/@name)else(concat('_attribute__',$extendeddata/local-name()))}{if(fn:exists($extendeddata[count(*)>0]))then($extendeddata/*)else($extendeddata/data())}
-        //   )
-        // )
-        // else()
+        result.retrieveCustomDataConditionWithAttr = `
+        else if($${collection}j/local-name()='ExtendedData') then(
+          for $extendeddata in $${collection}j/*/${projection.extendedColumns}
+          return 
+            for $${collection}k in ${projection.childColumns}
+            return if(not($${collection}k instance of attribute()))
+            then(
+                element{$${collection}k/@name}
+                {
+                  attribute{'order'}{1},
+                  attribute{'group'}{$${collection}k/@name},
+                  if(count($${collection}k/*)>0)
+                  then($${collection}k/*)
+                  else($${collection}k/text())
+                }
+            )
+            else(
+              element{concat('_attribute__',$extendeddata/@name,'__',$${collection}k/local-name())}{
+                attribute{'order'}{3},
+                attribute{'group'}{$${collection}k/local-name()},
+                $${collection}k/data()
+              }
+            )
+      )
+      else(
+      )`;
         break;
       default:
         break;
@@ -645,7 +689,7 @@ abstract class XMLExtension<T> implements XMLInterface {
       joinType != "NATURAL JOIN" ? recursion(collection[1].on, 0) : null;
 
     if (joinType == "INNER JOIN") {
-      result += `for`;
+      result += `let $doc := for`;
       collection.forEach((element, idx) => {
         const extensionQuery = this.constructExtensionQuery(
           this.spatialNamespace.prefix,
@@ -714,9 +758,10 @@ abstract class XMLExtension<T> implements XMLInterface {
             result += `,`;
           }
           columnAsArray.forEach((element, idx) => {
-            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${
-              element.table
-            }[local-name()=$col${idx}]/${
+            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{
+              attribute{'order'}{1},
+              attribute{'group'}{$mapColumn${idx}($col${idx})},
+              $element${element.table}[local-name()=$col${idx}]/${
               moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
             }}`;
             if (idx < columnAsArray.length - 1) {
@@ -725,6 +770,14 @@ abstract class XMLExtension<T> implements XMLInterface {
           });
           result += `)}`;
         }
+        result += `
+        for $i in $doc
+          let $projection :=for $j in $i/*
+            order by $j/@order ascending
+            group by $group := $j/@group
+          return $j
+        return element{'result'}{$projection}
+        `;
       }
     }
     if (joinType == "NATURAL JOIN") {
@@ -1066,7 +1119,7 @@ abstract class XMLExtension<T> implements XMLInterface {
       let $element${collection.name} := for $${collection.name}j in $${collection.name}i[1]/${projection.columns}
         return
         ${extensionQuery.spatialTypeSelection}
-        ${extensionQuery.retrieveCustomDataCondition}
+        ${extensionQuery.retrieveCustomDataConditionWithAttr}
       `;
       return result;
     };
@@ -1102,7 +1155,9 @@ abstract class XMLExtension<T> implements XMLInterface {
       if (where.length > 0) {
         whereQuery = `[${where}]`;
       }
-
+      if (projection.rawColumns.length > 0) {
+        result += `let $doc${collection} := `;
+      }
       result += `for $${collection}i in ${this.version.getDocFunc(
         collection,
         this.db_name
@@ -1129,6 +1184,16 @@ abstract class XMLExtension<T> implements XMLInterface {
       {(${funcProjQuery}${
         projectionResult.length > 0 && funcProjQuery.length > 0 ? `,` : ``
       }${projectionResult})}`;
+      if (projection.rawColumns.length > 0) {
+        result += `
+        for $i in $doc${collection}
+          let $projection :=for $j in $i/*
+            order by $j/@order ascending
+            group by $group := $j/@group
+          return $j
+        return element{'result'}{$projection}
+        `;
+      }
     } else {
       if (collection.length > 1 && where.length > 1 && projection.length > 1) {
         result = this.constructJoinQuery(
@@ -1294,28 +1359,58 @@ abstract class XMLExtension<T> implements XMLInterface {
           selection += `${selectionPath} ${translation} ${
             type === "number" ? value : `'${value}'`
           } `;
+          // selection += `@${column} ${translation} ${
+          //   type === "number" ? value : `'${value}'`
+          // } or `;
+          // selection += `${selectionPath}/@${column} ${translation} ${
+          //   type === "number" ? value : `'${value}'`
+          // } `;
         }
       } else if (type === "null") {
         if (operator === "IS") {
-          selection += `fn:exists(${selectionPath}/text()) `;
+          selection += `fn:exists(${selectionPath}/text()) or `;
+          selection += `fn:exists(@${column}/data()) or `;
+          selection += `fn:exists(${selectionPath}/@${column}/data())`;
         } else if (operator === "IS NOT") {
-          selection += `not(fn:exists(${selectionPath}/text()))`;
+          selection += `not(fn:exists(${selectionPath}/text())) or `;
+          selection += `not(fn:exists(@${column}/data())) or `;
+          selection += `not(fn:exists(${selectionPath}/@${column}/data()))`;
         }
       } else if (type === "expr_list") {
-        selection += `${selectionPath} ${translation} (`;
         const values = value as any[];
         const lastVal = values.pop();
+        let midselection = "";
+        let lastselection = "";
         for (const val of values) {
           if (val.type === "number") {
-            selection += `${val.value}, `;
+            midselection += `${val.value}, `;
           } else {
-            selection += `"${val.value}", `;
+            midselection += `"${val.value}", `;
           }
         }
         if (lastVal.type === "number") {
-          selection += `${lastVal.value})`;
+          lastselection += `${lastVal.value})`;
         } else {
-          selection += `"${lastVal.value}")`;
+          lastselection += `"${lastVal.value}")`;
+        }
+        if (column.includes("_attribute__")) {
+          let columnAttr = column.split("__");
+          if (columnAttr.length == 2) {
+            selection += `@${columnAttr[1]} ${translation} (${midselection}${lastselection}`;
+          }
+          if (columnAttr.length == 3) {
+            if (this.spatialNamespace.prefix == "gml") {
+              selection += `${access_col}${columnAttr[1]}`;
+            }
+            if (this.spatialNamespace.prefix == "kml") {
+              selection += `${access_col}ExtendedData/*/*[@name='${columnAttr[1]}']`;
+            }
+            selection += `/@${columnAttr[2]} ${translation} (${midselection}${lastselection}`;
+          }
+        } else {
+          selection += `${selectionPath} ${translation} (${midselection}${lastselection} or `;
+          // selection += `@${column} ${translation} (${midselection}${lastselection} or `;
+          // selection += `${selectionPath}/@${column} ${translation} (${midselection}${lastselection}`;
         }
       }
 
@@ -1342,6 +1437,7 @@ abstract class XMLExtension<T> implements XMLInterface {
         childColumns: `($${childProjection}|$${childProjection}/@*)`,
         funcColumns: "",
         extendedColumns: "*",
+        rawColumns: [...columns],
       };
     }
     let tempresultArr: string[] = [];
@@ -1392,9 +1488,11 @@ abstract class XMLExtension<T> implements XMLInterface {
           }
           funcArr.push(`element{'_func__${func_projection.name}__${
             func_detail.colname
-          }'}{${func_projection.name}($${collection.name}i${
-            func_detail.colname == "*" ? "" : pathProjection
-          }
+          }'}{attribute{'order'}{'1'},attribute{'group'}{'_func__${
+            func_projection.name
+          }__${func_detail.colname}'},${func_projection.name}($${
+            collection.name
+          }i${func_detail.colname == "*" ? "" : pathProjection}
             )}`);
         } else if (column.includes("_attribute__")) {
           let columnAttr = column.split("__");
@@ -1417,9 +1515,13 @@ abstract class XMLExtension<T> implements XMLInterface {
         } else {
           if (this.spatialNamespace.prefix == "gml") {
             tempresult += `${ignoreQName}${column}`;
+            tempresult += `| @${column}`;
+            tempchildResult += `$${childProjection}/@${column}`;
           }
           if (this.spatialNamespace.prefix == "kml") {
             tempExtended += `@name='${column}'`;
+            tempExtended += `or @${column}`;
+            tempchildResult += `$${childProjection}/@${column}`;
           }
         }
       }
@@ -1465,6 +1567,7 @@ abstract class XMLExtension<T> implements XMLInterface {
       childColumns: childResult,
       funcColumns: funcResult,
       extendedColumns: extendedResult,
+      rawColumns: arrColumns,
     };
   }
   constructGroupByQuery(groupby: any, collection: any): string {

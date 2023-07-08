@@ -101,6 +101,7 @@ interface XMLInterface extends Extension {
     path: string;
     spatialTypeSelection: string;
     retrieveCustomDataCondition: string;
+    retrieveCustomDataConditionWithAttr: string;
   };
   // constructJoinQuery(
   //   type: "inner" | "left" | "right" | "full" | "natural",

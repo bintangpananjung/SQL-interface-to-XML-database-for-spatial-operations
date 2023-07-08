@@ -171,9 +171,55 @@ function rebuildFromTree(
   }
   const sample = dataList[0];
 
+  // console.log(selectTree.columns);
   selectTree.columns = driver.addSelectTreeColumnsRebuild(sample, listColumns);
 
   let { columns, mapType } = driver.addColumnAndMapKeyRebuild(sample);
+  let undefinedCol;
+  if (tree.columns != "*") {
+    undefinedCol = tree.columns.filter(
+      val =>
+        !columns.some(
+          el => val.expr.type == "column_ref" && el == val.expr.column
+        )
+    );
+    if (undefinedCol.length > 0) {
+      // console.log(selectTree.columns, columns, mapType);
+      const replaceCol = undefinedCol.map(el => ({
+        prevCol: columns.find(
+          val => val.includes("_attribute__") && val.includes(el.expr.column)
+        ),
+        replacedCol: el.expr.column,
+      }));
+      // console.log(replaceCol);
+
+      columns = columns.map(val => {
+        const replacedCol = replaceCol.find(
+          el => el.prevCol == val
+        )?.replacedCol;
+        if (replacedCol) {
+          return replacedCol;
+        }
+        return val;
+      });
+      selectTree.columns = selectTree.columns.map((val: any) => {
+        const replacedCol = replaceCol.find(
+          el => val.expr.type == "column_ref" && el.prevCol == val.expr.column
+        )?.replacedCol;
+        if (replacedCol) {
+          const temp = { ...val };
+          temp.expr.column = replacedCol;
+          return temp;
+        }
+        return val;
+      });
+      replaceCol.forEach(element => {
+        mapType[element.replacedCol] = mapType[element.prevCol];
+        delete mapType[element.prevCol];
+      });
+    }
+  }
+  // console.log(selectTree.columns, columns, mapType);
 
   let rows = driver.addRowValuesRebuild(dataList, columns, mapType);
   // console.log("asd");

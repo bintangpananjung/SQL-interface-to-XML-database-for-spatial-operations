@@ -117,7 +117,7 @@ async function getData(
   } else {
     resultList = await Promise.all(resultPromise);
   }
-  // console.log(resultList);
+  console.log(resultList);
 
   console.log(
     `waktu pembangunan query dan eksekusi pada DBMS adalah ${
