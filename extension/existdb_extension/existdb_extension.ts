@@ -19,7 +19,15 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     args: number;
     postGISName: string;
     isAggregation: boolean;
-  }[] = [];
+  }[] = [
+    {
+      regex: /'/g,
+      name: "count",
+      args: 1,
+      isAggregation: true,
+      postGISName: "count",
+    },
+  ];
   moduleConfig: XMLConfig[] = [
     {
       version: ["6.0.1"],

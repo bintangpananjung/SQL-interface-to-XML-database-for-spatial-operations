@@ -87,6 +87,7 @@ interface XMLInterface extends Extension {
   supportedXMLExtensionType: string[];
   supportedSpatialType: { extType: string; types: string[] }[];
   supportedExtensionCheck(collection: string): string;
+  // getNodeCollectionAndAttribute(columns: Set<string>, collection: any): string;
   // executeExtensionCheckQuery(collection: string): Promise<void>;
   constructSpatialNamespace: (
     namespace: { prefix: string; namespace: string }[],
@@ -100,7 +101,7 @@ interface XMLInterface extends Extension {
   ): {
     path: string;
     spatialTypeSelection: string;
-    retrieveCustomDataCondition: string;
+    retrieveNestedDataCondition: string;
     retrieveCustomDataConditionWithAttr: string;
   };
   // constructJoinQuery(

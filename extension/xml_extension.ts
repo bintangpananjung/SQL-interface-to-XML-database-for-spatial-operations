@@ -1,5 +1,5 @@
 import { Column, From } from "flora-sql-parser";
-import { dropRight, isArray, subtract, template, values } from "lodash";
+import _, { dropRight, isArray, subtract, template, values } from "lodash";
 import { types } from "pg";
 import { XMLInterface, GeoJSON, Supported, XMLConfig } from "./extension";
 import { DOMParserImpl as dom } from "xmldom-ts";
@@ -112,10 +112,13 @@ abstract class XMLExtension<T> implements XMLInterface {
 
         for (const column of columns) {
           let path = column;
-          if (!column.includes("_attribute__")) {
-            path = `*[@group='${column}'][1]`;
+          let nodes: any = xpath.select(`/result/${path}`, doc);
+          if (nodes.length == 0) {
+            if (!column.includes("__")) {
+              path = `*[@group='${column}'][1]`;
+              nodes = xpath.select(`/result/${path}`, doc);
+            }
           }
-          const nodes: any = xpath.select(`/result/${path}`, doc);
 
           if (nodes.length > 0) {
             const node: any = nodes[0];
@@ -124,13 +127,20 @@ abstract class XMLExtension<T> implements XMLInterface {
               ?.types.find(el => el == node.firstChild?.localName);
 
             if (node.localName === "geometry" || geotype) {
-              row.value.push({
-                type: "string",
-                value: node.firstChild.data
-                  ? node.firstChild.data.toString()
-                  : node.firstChild.toString(),
-                // value: "a"
-              });
+              if (node.firstChild) {
+                row.value.push({
+                  type: "string",
+                  value: node.firstChild.data
+                    ? node.firstChild.data.toString()
+                    : node.firstChild.toString(),
+                  // value: "a"
+                });
+              } else {
+                row.value.push({
+                  type: "string",
+                  value: "",
+                });
+              }
             } else {
               if (node.firstChild) {
                 let value = node.firstChild.data
@@ -464,13 +474,13 @@ abstract class XMLExtension<T> implements XMLInterface {
   ): {
     path: string;
     spatialTypeSelection: string;
-    retrieveCustomDataCondition: string;
+    retrieveNestedDataCondition: string;
     retrieveCustomDataConditionWithAttr: string;
   } {
     const result = {
       path: "",
       spatialTypeSelection: "",
-      retrieveCustomDataCondition: "",
+      retrieveNestedDataCondition: "",
       retrieveCustomDataConditionWithAttr: "",
     };
     let spatialTypes = this.supportedSpatialType.find(element => {
@@ -494,27 +504,11 @@ abstract class XMLExtension<T> implements XMLInterface {
               : `$${collection}j/*`
           }}
         )`;
-        result.retrieveCustomDataCondition = `
-        else (
-          if(not($${collection}j instance of attribute()))
-          then(
-            for $${collection}k in (${projection.childColumns})
-            return if(not($${collection}k instance of attribute()))
-            then(
-                element{$${collection}k/local-name()}{
-                if(count($${collection}k/*)>0)
-                then($${collection}k/*)
-                else($${collection}k/text())
-              }
-            )
-            else(
-              element{concat('_attribute__',$${collection}j/local-name(),'__',$${collection}k/local-name())}{$${collection}k/data()}
-            )
-          )
-          else(
-            element{concat('_attribute__',$${collection}j/local-name())}{$${collection}j/data()}
-          )
-        )`;
+        result.retrieveNestedDataCondition = `
+          return element{concat($nestedcollection/local-name(),'__',$col/local-name())}{
+            if(count($col/*)>0) then($col/*) else($col/text())
+          }
+          `;
         result.retrieveCustomDataConditionWithAttr = `
         else (
           if(not($${collection}j instance of attribute()))
@@ -562,7 +556,7 @@ abstract class XMLExtension<T> implements XMLInterface {
               : `$${collection}j`
           }}
         )`;
-        result.retrieveCustomDataCondition = `
+        result.retrieveNestedDataCondition = `
         else if($${collection}j/local-name()='ExtendedData') then(
           for $extendeddata in $${collection}j/*/${projection.extendedColumns}
           return 
@@ -623,475 +617,608 @@ abstract class XMLExtension<T> implements XMLInterface {
     groupby: any,
     columnAs: any,
     constructTableQuery: any,
+    constructNestedTableQuery: any,
+    buildNestedCollectionQuery: any,
     moduleVersion: any
   ): string {
-    const recursion = (join: any, depth: number): string => {
-      let joinOnQuery = "";
-      if (join.left == null || join.right == null) {
-        return "";
+    let whereQuery: any[] = [];
+    where.forEach((element, idx) => {
+      whereQuery.push({
+        root: element.root.length > 0 ? `[${where[idx].root}]` : "",
+        nested: element.nested.length > 0 ? `[${where[idx].nested}]` : "",
+      });
+    });
+    const joinType = collection[1].join;
+    let attributeHandleQuery = ``;
+    const columnAsArray = Array.from(columnAs, ([table, col]) => ({
+      table,
+      col,
+    }));
+    const mapColumnArray: string[] = [];
+    const mapColumnResult: string[] = [];
+    const aggregationProjection: Set<string> = new Set();
+    let getUniqueColumnOnly: string = `return element {'result'}{for $node in distinct-values($joinedCol/*/local-name()) return $joinedCol/*[local-name() eq $node][1]}`;
+    if (columnAs) {
+      if (columnAs == "*") {
+        attributeHandleQuery = `for $i in $aggregated
+        let $projection :=for $j in $i/*
+          group by $group := $j/@group
+          let $first := min($j/@order)
+        return $j[@order=$first]
+      return element{'result'}{$projection}`;
+        //   attributeHandleQuery = `for $i in $aggregated
+        //   let $projection :=for $j in $i/*
+        //     order by $j/@order ascending
+        //     group by $group := $j/@group
+        //   return $j
+        // return element{'result'}{$projection}`;
+      } else {
+        columnAsArray.forEach((element, index) => {
+          mapColumnArray.push(
+            `let $mapColumn${index} := map {${element.col
+              .map(
+                (val: any, idxcol: any) =>
+                  `'${val.column}' ${this.version.mapOperator} '${val.as}'`
+              )
+              .join(",")}}`
+          );
+          mapColumnResult.push(`for $col${index} in map:keys($mapColumn${index}) return element{$mapColumn${index}($col${index})}{
+            attribute{'order'}{1},
+            attribute{'group'}{$mapColumn${index}($col${index})},
+            $element${element.table}[local-name()=$col${index}]/${
+            moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
+          }}`);
+        });
+        attributeHandleQuery = `return $aggregated`;
       }
-      const { left, right } = join;
+    }
+    collection.forEach((element, idx) => {
+      if (
+        projection[idx].columns.length > 0 ||
+        projection[idx].childColumns.length > 0 ||
+        projection[idx].extendedColumns.length > 0
+      ) {
+        aggregationProjection.add(`$aggregaterow[1]/*`);
+      } else {
+        if (projection[idx].nestedColumns.length > 0) {
+          aggregationProjection.add(`$aggregaterow[1]/*`);
+        }
+      }
+      if (projection[idx].funcColumns.length > 0) {
+        if (columnAs && columnAs.size != 0 && columnAs != "*") {
+          const pattern = /(?<=:)[A-Za-z0-9_]+(?=\))/;
+          const column = (projection[idx].funcColumns as string).match(
+            pattern
+          )![0];
+          // console.log(element, columnAs);
 
-      let resultLeft = recursion(join.left, depth + 1);
-      let resultRight = recursion(join.right, depth + 1);
+          const columnMapped = columnAs
+            .get(element.name)
+            .find((val: any) => val.column == column).as;
+          let func = (projection[idx].funcColumns as string).replace(
+            pattern,
+            columnMapped
+          );
+          aggregationProjection.add(func);
+        } else {
+          aggregationProjection.add(projection[idx].funcColumns);
+        }
+      }
+    });
+    let aggregationQuery = ``;
+    if (
+      groupby.length == 0 &&
+      projection.some(val => val.funcColumns.length > 0)
+    ) {
+      aggregationQuery = `let $aggregaterow := $doc
+        let $aggregated:=element{'result'}{(${[...aggregationProjection].join(
+          ","
+        )})}`;
+    } else {
+      aggregationQuery = `let $aggregated :=for $aggregaterow in $doc
+        ${groupby.length > 0 ? `group by $group := ${groupby}` : ""}
+      return element{'result'}{(${[...aggregationProjection].join(",")})}`;
+    }
 
-      // if case != and or
-      if (join.operator == "AND") {
+    if (joinType == "INNER JOIN") {
+      const recursion = (join: any, depth: number): string => {
+        let joinOnQuery = "";
+        if (join.left == null || join.right == null) {
+          return "";
+        }
+        const { left, right } = join;
+
+        let resultLeft = recursion(join.left, depth + 1);
+        let resultRight = recursion(join.right, depth + 1);
+
+        // if case != and or
+        if (join.operator == "AND") {
+          const { translation } = this.supportedOperators.find(
+            ({ origin }) => origin === join.operator
+          ) as Supported;
+          joinOnQuery += `${resultLeft}${translation} ${resultRight}`;
+          return joinOnQuery;
+        }
+
+        const as = this.supportedOperators.find(
+          ({ origin }) => origin === join.operator
+        ) as Supported;
         const { translation } = this.supportedOperators.find(
           ({ origin }) => origin === join.operator
         ) as Supported;
-        joinOnQuery += `${resultLeft}${translation} ${resultRight}`;
-        return joinOnQuery;
-      }
+        const access_col = "*:";
 
-      const as = this.supportedOperators.find(
-        ({ origin }) => origin === join.operator
-      ) as Supported;
-      const { translation } = this.supportedOperators.find(
-        ({ origin }) => origin === join.operator
-      ) as Supported;
-      const access_col = "*:";
-
-      const constructColumnOn = (column: string) => {
-        let columnOn = "";
-        if (column.includes("_attribute__")) {
-          let columnAttr = column.split("__");
-          if (columnAttr.length == 2) {
-            columnOn += `@${columnAttr[1]}/data()`;
-          }
-          if (columnAttr.length == 3) {
+        const constructColumnOn = (column: string) => {
+          let columnOn = "";
+          if (column.includes("_attribute__")) {
+            let columnAttr = column.split("__");
+            if (columnAttr.length == 2) {
+              columnOn += `@${columnAttr[1]}/data()`;
+            }
+            if (columnAttr.length == 3) {
+              if (this.spatialNamespace.prefix == "kml") {
+                columnOn += `*:ExtendedData/*/*[@name='${columnAttr[1]}']/@${columnAttr[2]}/data()`;
+              } else {
+                columnOn += `${access_col}${columnAttr[1]}/@${columnAttr[2]}/data()`;
+              }
+            }
+          } else {
             if (this.spatialNamespace.prefix == "kml") {
-              columnOn += `*:ExtendedData/*/*[@name='${columnAttr[1]}']/@${columnAttr[2]}/data()`;
+              columnOn += `*:ExtendedData/*/*[@name='${column}']/text()`;
             } else {
-              columnOn += `${access_col}${columnAttr[1]}/@${columnAttr[2]}/data()`;
+              columnOn += `${access_col}${column}/text()`;
             }
           }
-        } else {
-          if (this.spatialNamespace.prefix == "kml") {
-            columnOn += `*:ExtendedData/*/*[@name='${column}']/text()`;
-          } else {
-            columnOn += `${access_col}${column}/text()`;
-          }
+          return columnOn;
+        };
+
+        if (right.type === "column_ref") {
+          joinOnQuery += `$${right.table}i/${constructColumnOn(
+            right.column
+          )} ${translation} $${left.table}i/${constructColumnOn(left.column)} `;
         }
-        return columnOn;
+
+        return joinOnQuery;
       };
 
-      if (right.type === "column_ref") {
-        joinOnQuery += `$${right.table}i/${constructColumnOn(
-          right.column
-        )} ${translation} $${left.table}i/${constructColumnOn(left.column)} `;
-      }
+      const joinOn = recursion(collection[1].on, 0);
 
-      return joinOnQuery;
-    };
-    const joinType = collection[1].join;
-    const joinOn =
-      joinType != "NATURAL JOIN" ? recursion(collection[1].on, 0) : null;
+      let iterateTwoCollections: string[] = [];
+      let iterateTwoNestedCollections: string[] = [];
+      let getTwoNestedCollections: string[] = [];
+      let checkTwoNestedCollections: string[] = [];
+      let getTwoNestedTableQuery: string[] = [];
+      let getTwoTableQuery: string[] = [];
+      let nestedResult: string = "";
+      let noNestedResult: string = "";
+      const resultOfCartesianProduct: string[] = [];
+      const resultOfCartesianProductNested: string[] = [];
+      // collection.map(
+      //   element => `$nestedColumn${element.name}`
+      // );
 
-    if (joinType == "INNER JOIN") {
-      result += `let $doc := for`;
       collection.forEach((element, idx) => {
         const extensionQuery = this.constructExtensionQuery(
           this.spatialNamespace.prefix,
           element.name,
           moduleVersion,
-          projection
+          projection[idx]
         );
-        result += ` $${element.name}i in ${this.version.getDocFunc(
-          element.name,
-          this.db_name
-        )}//${extensionQuery.path}${
-          where[idx].length > 0 ? `[${where[idx]}]` : ""
-        }`;
-        if (idx < collection.length - 1) {
-          result += `,`;
-        }
-      });
-      result += ` where ${joinOn}`;
-      if (groupby.length > 0) {
-        result += ` group by $group := ${groupby} `;
-      }
-      if (columnAs) {
-        let projArr: string[] = [];
-        collection.forEach((element, idx) => {
-          if (
-            projection[idx].columns.length > 0 ||
-            projection[idx].childColumns.length > 0 ||
-            projection[idx].extendedColumns.length > 0
-          ) {
-            result = constructTableQuery(result, element, projection[idx]);
-            if (columnAs == "*") {
-              projArr.push(`$element${element.name}`);
-            }
-          }
-          if (projection[idx].funcColumns.length > 0) {
-            projArr.push(`${projection[idx].funcColumns}`);
-          }
-        });
-
-        if (columnAs == "*") {
-          result += ` let $element := element {'result'}{(`;
-          result += projArr.join(",");
-          result += `)}`;
-          result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
+        iterateTwoCollections.push(
+          `$${element.name}i in ${this.version.getDocFunc(
+            element.name,
+            this.db_name
+          )}//${extensionQuery.path}${whereQuery[idx].root}`
+        );
+        if (
+          projection[idx].columns.length > 0 ||
+          projection[idx].childColumns.length > 0 ||
+          projection[idx].extendedColumns.length > 0
+        ) {
+          getTwoTableQuery.push(
+            constructTableQuery({ name: element.name }, projection[idx])
+          );
+          resultOfCartesianProductNested.push(`$element${element.name}`);
+          resultOfCartesianProduct.push(`$element${element.name}`);
+          // aggregationProjection.add(`$aggregaterow[1]/*`);
         } else {
-          const columnAsArray = Array.from(columnAs, ([table, col]) => ({
-            table,
-            col,
-          }));
-
-          columnAsArray.forEach((element, index) => {
-            result += ` let $mapColumn${index} := map {`;
-            // const columns = columnAs.get(key);
-
-            element.col.forEach((val: any, idxcol: any) => {
-              result += `'${val.column}' ${this.version.mapOperator} '${val.as}'`;
-              if (idxcol < element.col.length - 1) {
-                result += ",";
-              }
-            });
-            result += `} `;
-          });
-          result += ` return element{'result'}{(`;
-          result += projArr.join(",");
-          if (columnAsArray.length > 0 && projArr.length > 0) {
-            result += `,`;
+          resultOfCartesianProduct.push(`$${element.name}i/*`);
+          if (projection[idx].nestedColumns.length > 0) {
+            // aggregationProjection.add(`$aggregaterow[1]/*`);
           }
-          columnAsArray.forEach((element, idx) => {
-            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{
-              attribute{'order'}{1},
-              attribute{'group'}{$mapColumn${idx}($col${idx})},
-              $element${element.table}[local-name()=$col${idx}]/${
-              moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
-            }}`;
-            if (idx < columnAsArray.length - 1) {
-              result += ",";
+        }
+
+        getTwoNestedCollections.push(
+          `let $nestedcollection${element.name} := $${element.name}i/*[@_is_collection="true"]`
+        );
+        iterateTwoNestedCollections.push(
+          `$${element.name}nestedcol in $nestedcollection${element.name}/*${whereQuery[idx].nested}`
+        );
+        checkTwoNestedCollections.push(
+          `exists($nestedcollection${element.name})`
+        );
+        resultOfCartesianProductNested.push(`$nestedColumn${element.name}`);
+        getTwoNestedTableQuery.push(
+          constructNestedTableQuery(element.name, projection[idx])
+        );
+      });
+      if (columnAs) {
+        if (columnAs == "*") {
+          nestedResult = `let $joinedCol :=  element{'result'}{(${resultOfCartesianProductNested.join(
+            ","
+          )})}
+          ${getUniqueColumnOnly}
+          `;
+          noNestedResult = `let $joinedCol :=  element{'result'}{(${resultOfCartesianProduct.join(
+            ","
+          )})}
+          ${getUniqueColumnOnly}`;
+        } else {
+          nestedResult = `
+          ${mapColumnArray.join(" ")}
+          let $joinedCol:= element{'result'}{(
+            ${resultOfCartesianProductNested.join(",")}${
+            columnAsArray.length > 0 &&
+            resultOfCartesianProductNested.length > 0
+              ? ","
+              : ""
+          }
+            ${mapColumnResult.join(",")}
+          )}
+          ${getUniqueColumnOnly}
+          `;
+          noNestedResult = `
+          ${mapColumnArray.join(" ")}
+          let $joinedCol:= element{'result'}{(
+            ${
+              mapColumnResult.length > 0
+                ? mapColumnResult.join(",")
+                : resultOfCartesianProduct.join(",")
             }
-          });
-          result += `)}`;
+          )}
+          ${getUniqueColumnOnly}
+          `;
+        }
+      }
+
+      result += `
+      let $doc:= for ${iterateTwoCollections.join(",")}
+      where ${joinOn}
+      ${getTwoTableQuery.join(" ")}
+      ${getTwoNestedCollections.join(" ")}
+      return if(${checkTwoNestedCollections.join(" or ")})then(
+        for ${iterateTwoNestedCollections.join(",")}
+        ${getTwoNestedTableQuery.join(" ")}
+        ${nestedResult}
+      )
+      else(
+        ${noNestedResult}
+      )
+      ${aggregationQuery}
+      ${attributeHandleQuery}
+      `;
+    }
+    // if (joinType == "NATURAL JOIN") {
+    //   let iterateColumnSameName = "";
+    //   let columnSameName = "";
+    //   let columnSameNameQuery = "";
+    //   collection.forEach((element, idx) => {
+    //     const extensionQuery = this.constructExtensionQuery(
+    //       this.spatialNamespace.prefix,
+    //       element.name,
+    //       moduleVersion,
+    //       projection
+    //     );
+    //     iterateColumnSameName += `$${
+    //       element.name
+    //     }on in ${this.version.getDocFunc(element.name, this.db_name)}//${
+    //       extensionQuery.path
+    //     }[1]/*`;
+    //     columnSameName += ` $${element.name}on/local-name()`;
+    //     columnSameNameQuery += ` '$${element.name}/',$${element.name}/local-name(),'/text()'`;
+    //     if (idx < collection.length - 1) {
+    //       iterateColumnSameName += ", ";
+    //       columnSameName += " =";
+    //       columnSameNameQuery += " =";
+    //     }
+    //   });
+    //   result += ` let $joinOn = for ${iterateColumnSameName} where ${columnSameName} return concat(${columnSameNameQuery})`;
+
+    //   result += `for`;
+    //   collection.forEach((element, idx) => {
+    //     const extensionQuery = this.constructExtensionQuery(
+    //       this.spatialNamespace.prefix,
+    //       element.name,
+    //       moduleVersion,
+    //       projection
+    //     );
+    //     result += ` $${element.name}i in ${this.version.getDocFunc(
+    //       element.name,
+    //       this.db_name
+    //     )}//${extensionQuery.path}${
+    //       where[idx].length > 0 ? `[${where[idx]}]` : ""
+    //     }`;
+    //     if (idx < collection.length - 1) {
+    //       result += `,`;
+    //     }
+    //   });
+    //   collection.forEach((element, idx) => {
+    //     result = constructTableQuery(result, element, projection[idx]);
+    //   });
+
+    //   // collection.forEach((element ,idx)=> {
+    //   //   result+=`'$${element.name}i/',$${}`
+    //   // });
+    //   if (columnAs) {
+    //     if (columnAs == "*") {
+    //       result += ` let $element := element {'result'}{(`;
+    //       collection.forEach((val, idx) => {
+    //         result += `$element${val.name}`;
+    //         if (idx < collection.length - 1) {
+    //           result += `,`;
+    //         }
+    //       });
+    //       result += `)}`;
+    //       result += ` where xquery:eval(string-join($joinOn,' and'))`;
+    //       result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
+    //     } else {
+    //       const columnAsArray = Array.from(columnAs, ([table, col]) => ({
+    //         table,
+    //         col,
+    //       }));
+
+    //       columnAsArray.forEach((element, index) => {
+    //         result += ` let $mapColumn${index} := map {`;
+    //         // const columns = columnAs.get(key);
+
+    //         element.col.forEach((val: any, idxcol: any) => {
+    //           result += `'${val.column}' ${this.version.mapOperator} '${val.as}'`;
+    //           if (idxcol < element.col.length - 1) {
+    //             result += ",";
+    //           }
+    //         });
+    //         result += `} `;
+    //       });
+    //       result += ` where ${joinOn}`;
+    //       result += ` return element{'result'}{(`;
+    //       columnAsArray.forEach((element, idx) => {
+    //         result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${
+    //           element.table
+    //         }[local-name()=$col${idx}]/${
+    //           moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
+    //         }}`;
+    //         if (idx < columnAsArray.length - 1) {
+    //           result += ",";
+    //         }
+    //       });
+    //       result += `)}`;
+    //     }
+    //   }
+    // }
+    if (joinType == "LEFT JOIN" || joinType == "RIGHT JOIN") {
+      const recursion = (join: any, depth: number): string => {
+        let joinOnQuery = "";
+        if (join.left == null || join.right == null) {
+          return "";
+        }
+        const { left, right } = join;
+
+        let resultLeft = recursion(join.left, depth + 1);
+        let resultRight = recursion(join.right, depth + 1);
+
+        // if case != and or
+        if (join.operator == "AND") {
+          const { translation } = this.supportedOperators.find(
+            ({ origin }) => origin === join.operator
+          ) as Supported;
+          joinOnQuery += `${resultLeft}${translation} ${resultRight}`;
+          return joinOnQuery;
+        }
+
+        const as = this.supportedOperators.find(
+          ({ origin }) => origin === join.operator
+        ) as Supported;
+        const { translation } = this.supportedOperators.find(
+          ({ origin }) => origin === join.operator
+        ) as Supported;
+        const access_col = "*:";
+
+        const constructColumnOn = (column: string) => {
+          let columnOn = "";
+          columnOn += `${access_col}${column}/text()`;
+          return columnOn;
+        };
+
+        if (right.type === "column_ref") {
+          joinOnQuery += `$right/${constructColumnOn(
+            right.column
+          )} ${translation} $left/${constructColumnOn(left.column)} `;
+        }
+
+        return joinOnQuery;
+      };
+
+      const constructColumnNull = (
+        collection: string,
+        projection: any,
+        doc: string,
+        tableQuery?: string
+      ): string => {
+        let result = `
+          let $nullCol${collection} := for $${collection}i in ${doc}[1] 
+          ${
+            tableQuery
+              ? tableQuery
+              : `let $element${collection}:=for $${collection}j in $${collection}i/*
+          return element{$${collection}j/local-name()}{attribute{'order'}{$${collection}j/@order},attribute{'group'}{$${collection}j/@group}}`
+          }
+          return $element${collection}
+        `;
+        return result;
+      };
+      const joinOn = recursion(collection[1].on, 0);
+      const variables: { left: any; right: any } = { left: {}, right: {} };
+      const variableNames = ["left", "right"];
+      variableNames.forEach((element, idx) => {
+        const variableName = element as "left" | "right";
+        variables[variableName].collection = collection[idx].name;
+        variables[variableName].extensionQuery = this.constructExtensionQuery(
+          this.spatialNamespace.prefix,
+          collection[idx].name,
+          moduleVersion,
+          projection[idx]
+        );
+        variables[variableName].whereQuery = whereQuery[idx];
+        variables[variableName].projection = projection[idx];
+        const extensionQuery = this.constructExtensionQuery(
+          this.spatialNamespace.prefix,
+          collection[idx].name,
+          moduleVersion,
+          projection[idx]
+        );
+
+        variables[variableName].iterateCollection = `$${
+          collection[idx].name
+        }i in ${this.version.getDocFunc(collection[idx].name, this.db_name)}//${
+          extensionQuery.path
+        }${whereQuery[idx].root}`;
+      });
+
+      const left = variables.left;
+      const right = variables.right;
+      let noMatchedResult = ``;
+      let matchedResult = ``;
+      if (joinType == "LEFT JOIN") {
+        if (columnAs) {
+          if (columnAs == "*") {
+            noMatchedResult = `let $joinedCol :=  element{'result'}{($left/*,$nullCol${right.collection})}
+          ${getUniqueColumnOnly}`;
+            matchedResult = `let $joinedCol :=  element{'result'}{($left/*,$right/*)}
+          ${getUniqueColumnOnly}`;
+          } else {
+            noMatchedResult = `
+          ${mapColumnArray.join(" ")}
+          let $joinedCol:= element{'result'}{(
+          ${
+            mapColumnResult.length > 0
+              ? mapColumnResult.join(",")
+              : `$left/*,$nullCol${right.collection}`
+          })}
+          ${getUniqueColumnOnly}
+          `;
+            matchedResult = `
+          ${mapColumnArray.join(" ")}
+          let $joinedCol:= element{'result'}{(
+          ${
+            mapColumnResult.length > 0
+              ? mapColumnResult.join(",")
+              : `$left/*,$right/*`
+          })}
+          ${getUniqueColumnOnly}
+          `;
+          }
         }
         result += `
-        for $i in $doc
-          let $projection :=for $j in $i/*
-            order by $j/@order ascending
-            group by $group := $j/@group
-          return $j
-        return element{'result'}{$projection}
+        ${buildNestedCollectionQuery(
+          left.projection,
+          left.collection,
+          left.whereQuery,
+          left.extensionQuery
+        )}
+        ${buildNestedCollectionQuery(
+          right.projection,
+          right.collection,
+          right.whereQuery,
+          right.extensionQuery
+        )}
+        ${constructColumnNull(
+          right.collection,
+          right.projection,
+          `$doc${right.collection}`
+        )}
+        let $doc:= for $left in $doc${left.collection}
+        let $element${left.collection} :=$left/*
+        let $matchedRow := for $right in $doc${right.collection}
+        where ${joinOn}
+        let $element${right.collection}:=$right/*
+        ${matchedResult}
+        return if(empty($matchedRow)) then(
+          let $element${right.collection}:=$nullCol${right.collection}
+          ${noMatchedResult}
+        )else(
+          $matchedRow
+        )
+        ${aggregationQuery}
+        ${attributeHandleQuery}
+
+        `;
+      }
+      if (joinType == "RIGHT JOIN") {
+        if (columnAs) {
+          if (columnAs == "*") {
+            noMatchedResult = `let $joinedCol :=  element{'result'}{($left/*,$nullCol${left.collection})}
+          ${getUniqueColumnOnly}`;
+            matchedResult = `let $joinedCol :=  element{'result'}{($left/*,$right/*)}
+          ${getUniqueColumnOnly}`;
+          } else {
+            noMatchedResult = `
+          ${mapColumnArray.join(" ")}
+          let $joinedCol:= element{'result'}{(
+          ${
+            mapColumnResult.length > 0
+              ? mapColumnResult.join(",")
+              : `$left/*,$nullCol${left.collection}`
+          })}
+          ${getUniqueColumnOnly}
+          `;
+            matchedResult = `
+          ${mapColumnArray.join(" ")}
+          let $joinedCol:= element{'result'}{(
+          ${
+            mapColumnResult.length > 0
+              ? mapColumnResult.join(",")
+              : `$left/*,$right/*`
+          })}
+          ${getUniqueColumnOnly}
+          `;
+          }
+        }
+        result += `
+        ${buildNestedCollectionQuery(
+          right.projection,
+          right.collection,
+          right.whereQuery,
+          right.extensionQuery
+        )}
+        ${buildNestedCollectionQuery(
+          left.projection,
+          left.collection,
+          left.whereQuery,
+          left.extensionQuery
+        )}
+        ${constructColumnNull(
+          left.collection,
+          left.projection,
+          `$doc${left.collection}`
+        )}
+        let $doc:= for $left in $doc${right.collection}
+        let $element${right.collection} :=$left/*
+        let $matchedRow := for $right in $doc${left.collection}
+        where ${joinOn}
+        let $element${left.collection}:=$right/*
+        ${matchedResult}
+        return if(empty($matchedRow)) then(
+          let $element${left.collection}:=$nullCol${left.collection}
+          ${noMatchedResult}
+        )else(
+          $matchedRow
+        )
+        ${aggregationQuery}
+        ${attributeHandleQuery}
+
         `;
       }
     }
-    if (joinType == "NATURAL JOIN") {
-      let iterateColumnSameName = "";
-      let columnSameName = "";
-      let columnSameNameQuery = "";
-      collection.forEach((element, idx) => {
-        const extensionQuery = this.constructExtensionQuery(
-          this.spatialNamespace.prefix,
-          element.name,
-          moduleVersion,
-          projection
-        );
-        iterateColumnSameName += `$${
-          element.name
-        }on in ${this.version.getDocFunc(element.name, this.db_name)}//${
-          extensionQuery.path
-        }[1]/*`;
-        columnSameName += ` $${element.name}on/local-name()`;
-        columnSameNameQuery += ` '$${element.name}/',$${element.name}/local-name(),'/text()'`;
-        if (idx < collection.length - 1) {
-          iterateColumnSameName += ", ";
-          columnSameName += " =";
-          columnSameNameQuery += " =";
-        }
-      });
-      result += ` let $joinOn = for ${iterateColumnSameName} where ${columnSameName} return concat(${columnSameNameQuery})`;
-
-      result += `for`;
-      collection.forEach((element, idx) => {
-        const extensionQuery = this.constructExtensionQuery(
-          this.spatialNamespace.prefix,
-          element.name,
-          moduleVersion,
-          projection
-        );
-        result += ` $${element.name}i in ${this.version.getDocFunc(
-          element.name,
-          this.db_name
-        )}//${extensionQuery.path}${
-          where[idx].length > 0 ? `[${where[idx]}]` : ""
-        }`;
-        if (idx < collection.length - 1) {
-          result += `,`;
-        }
-      });
-      collection.forEach((element, idx) => {
-        result = constructTableQuery(result, element, projection[idx]);
-      });
-
-      // collection.forEach((element ,idx)=> {
-      //   result+=`'$${element.name}i/',$${}`
-      // });
-      if (columnAs) {
-        if (columnAs == "*") {
-          result += ` let $element := element {'result'}{(`;
-          collection.forEach((val, idx) => {
-            result += `$element${val.name}`;
-            if (idx < collection.length - 1) {
-              result += `,`;
-            }
-          });
-          result += `)}`;
-          result += ` where xquery:eval(string-join($joinOn,' and'))`;
-          result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
-        } else {
-          const columnAsArray = Array.from(columnAs, ([table, col]) => ({
-            table,
-            col,
-          }));
-
-          columnAsArray.forEach((element, index) => {
-            result += ` let $mapColumn${index} := map {`;
-            // const columns = columnAs.get(key);
-
-            element.col.forEach((val: any, idxcol: any) => {
-              result += `'${val.column}' ${this.version.mapOperator} '${val.as}'`;
-              if (idxcol < element.col.length - 1) {
-                result += ",";
-              }
-            });
-            result += `} `;
-          });
-          result += ` where ${joinOn}`;
-          result += ` return element{'result'}{(`;
-          columnAsArray.forEach((element, idx) => {
-            result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{$element${
-              element.table
-            }[local-name()=$col${idx}]/${
-              moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
-            }}`;
-            if (idx < columnAsArray.length - 1) {
-              result += ",";
-            }
-          });
-          result += `)}`;
-        }
-      }
-    }
-
-    if (joinType == "LEFT JOIN") {
-      // let spatialTypes = this.supportedSpatialType.find(element => {
-      //   return element.extType == this.spatialNamespace.prefix;
-      // });
-      // let tempSpatialTypes: any[] = [];
-      // spatialTypes?.types.forEach(element => {
-      //   tempSpatialTypes.push(`local-name()='${element}'`);
-      // });
-      // const extensionQuery = this.constructExtensionQuery(
-      //   this.spatialNamespace.prefix,
-      //   collection[0].name,
-      //   moduleVersion,
-      //   projection
-      // );
-      // const colQueryGeo = this.constructExtensionQuery(
-      //   this.spatialNamespace.prefix,
-      //   collection[1].name,
-      //   moduleVersion,
-      //   projection
-      // );
-      // result += ` for $${collection[0].name}i in ${this.version.getDocFunc(
-      //   collection[0].name,
-      //   this.db_name
-      // )}//${extensionQuery.path}${where[0].length > 0 ? `[${where[0]}]` : ""}`;
-      // //get columns for projecting the null values
-      // result += ` let $column${collection[1].name} := for $${
-      //   collection[1].name
-      // }col in ${this.version.getDocFunc(collection[1].name, this.db_name)}//${
-      //   extensionQuery.path
-      // }[1]/* return `;
-      // if (this.spatialNamespace.prefix == "gml") {
-      //   result += ` element{if(${colQueryGeo.spatialSelectionNoCondition})then('geometry')else($${collection[1].name}col/local-name())}{} `;
-      // }
-      // if (this.spatialNamespace.prefix == "kml") {
-      //   result += ` if(${colQueryGeo.spatialSelectionNoCondition})
-      //   then(element{'geometry'}{})
-      // else if($${collection[1].name}col/local-name()='ExtendedData')
-      //     then(for $extendeddata in $${collection[1].name}col/*/*
-      //     return element{$extendeddata/@name}{}
-      //     )
-      // else()`;
-      // }
-      // //loop in second table joined with table 1
-      // result += `let $element${collection[1].name} := for $${
-      //   collection[1].name
-      // }i in ${this.version.getDocFunc(collection[1].name, this.db_name)}//${
-      //   extensionQuery.path
-      // }${where[1].length > 0 ? `[${where[1]}]` : ""}`;
-      // result = constructTableQuery(result, collection[1], projection[1]);
-      // result += ` where ${joinOn} return $element${collection[1].name}`;
-      // result = constructTableQuery(result, collection[0], projection[0]);
-      // if (columnAs) {
-      //   if (columnAs == "*") {
-      //     result += ` let $element := element {'result'}{(`;
-      //     collection.forEach((val, idx) => {
-      //       if (idx > 0) {
-      //         result += `if(fn:exists($element${val.name})) then($element${val.name}) else($column${val.name})`;
-      //       } else {
-      //         result += `$element${val.name}`;
-      //       }
-      //       if (idx < collection.length - 1) {
-      //         result += `,`;
-      //       }
-      //     });
-      //     result += `)}`;
-      //     result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
-      //   } else {
-      //     const columnAsArray = Array.from(columnAs, ([table, col]) => ({
-      //       table,
-      //       col,
-      //     }));
-      //     columnAsArray.forEach((element, index) => {
-      //       result += ` let $mapColumn${index} := map {`;
-      //       // const columns = columnAs.get(key);
-      //       element.col.forEach((val: any, idxcol: any) => {
-      //         result += `'${val.column}' := '${val.as}'`;
-      //         if (idxcol < element.col.length - 1) {
-      //           result += ",";
-      //         }
-      //       });
-      //       result += `} `;
-      //     });
-      //     result += ` return element{'result'}{(`;
-      //     columnAsArray.forEach((element, idx) => {
-      //       result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{if(fn:exists($element${
-      //         element.table
-      //       }))then($element${element.table}[local-name()=$col${idx}]/${
-      //         moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
-      //       })else()}`;
-      //       if (idx < columnAsArray.length - 1) {
-      //         result += ",";
-      //       }
-      //     });
-      //     result += `)}`;
-      //   }
-      // }
-    }
-    if (joinType == "RIGHT JOIN") {
-      // let collectionReversed = collection.reverse();
-      // let whereReversed = where.reverse();
-      // let projectionReversed = projection.reverse();
-      // let spatialTypes = this.supportedSpatialType.find(element => {
-      //   return element.extType == this.spatialNamespace.prefix;
-      // });
-      // let tempSpatialTypes: any[] = [];
-      // spatialTypes?.types.forEach(element => {
-      //   tempSpatialTypes.push(`local-name()='${element}'`);
-      // });
-      // const extensionQuery = this.constructExtensionQuery(
-      //   this.spatialNamespace.prefix,
-      //   collectionReversed[0].name,
-      //   moduleVersion,
-      //   projection
-      // );
-      // const colQueryGeo = this.constructExtensionQuery(
-      //   this.spatialNamespace.prefix,
-      //   collectionReversed[1].name,
-      //   moduleVersion,
-      //   projectionReversed
-      // );
-      // result += ` for $${
-      //   collectionReversed[0].name
-      // }i in ${this.version.getDocFunc(
-      //   collectionReversed[0].name,
-      //   this.db_name
-      // )}//${extensionQuery.path}${
-      //   whereReversed[0].length > 0 ? `[${whereReversed[0]}]` : ""
-      // }`;
-      // //get columns for projecting the null values
-      // result += ` let $column${collectionReversed[1].name} := for $${
-      //   collectionReversed[1].name
-      // }col in ${this.version.getDocFunc(
-      //   collectionReversed[1].name,
-      //   this.db_name
-      // )}//${extensionQuery.path}[1]/* return `;
-      // if (this.spatialNamespace.prefix == "gml") {
-      //   result += ` element{if(${colQueryGeo.spatialSelectionNoCondition})then('geometry')else($${collectionReversed[1].name}col/local-name())}{} `;
-      // }
-      // if (this.spatialNamespace.prefix == "kml") {
-      //   result += ` if(${colQueryGeo.spatialSelectionNoCondition})
-      //   then(element{'geometry'}{})
-      // else if($${collectionReversed[1].name}col/local-name()='ExtendedData')
-      //     then(for $extendeddata in $${collectionReversed[1].name}col/*/*
-      //     return element{$extendeddata/@name}{}
-      //     )
-      // else()`;
-      // }
-      // //loop in second table joined with table 1
-      // result += `let $element${collectionReversed[1].name} := for $${
-      //   collectionReversed[1].name
-      // }i in ${this.version.getDocFunc(
-      //   collectionReversed[1].name,
-      //   this.db_name
-      // )}//${extensionQuery.path}${
-      //   whereReversed[1].length > 0 ? `[${whereReversed[1]}]` : ""
-      // }`;
-      // result = constructTableQuery(
-      //   result,
-      //   collectionReversed[1],
-      //   projectionReversed[1]
-      // );
-      // result += ` where ${joinOn} return $element${collectionReversed[1].name}`;
-      // result = constructTableQuery(
-      //   result,
-      //   collectionReversed[0],
-      //   projectionReversed[0]
-      // );
-      // if (columnAs) {
-      //   if (columnAs == "*") {
-      //     result += ` let $element := element {'result'}{(`;
-      //     collectionReversed.forEach((val, idx) => {
-      //       if (idx > 0) {
-      //         result += `if(fn:exists($element${val.name})) then($element${val.name}) else($column${val.name})`;
-      //       } else {
-      //         result += `$element${val.name}`;
-      //       }
-      //       if (idx < collectionReversed.length - 1) {
-      //         result += `,`;
-      //       }
-      //     });
-      //     result += `)}`;
-      //     result += ` return element {'result'}{for $node in distinct-values($element/*/local-name()) return $element/*[local-name() eq $node][1]}`;
-      //   } else {
-      //     const columnAsArray = Array.from(columnAs, ([table, col]) => ({
-      //       table,
-      //       col,
-      //     })).reverse();
-      //     columnAsArray.forEach((element, index) => {
-      //       result += ` let $mapColumn${index} := map {`;
-      //       // const columns = columnAs.get(key);
-      //       element.col.forEach((val: any, idxcol: any) => {
-      //         result += `'${val.column}' := '${val.as}'`;
-      //         if (idxcol < element.col.length - 1) {
-      //           result += ",";
-      //         }
-      //       });
-      //       result += `} `;
-      //     });
-      //     result += ` return element{'result'}{(`;
-      //     columnAsArray.forEach((element, idx) => {
-      //       result += `for $col${idx} in map:keys($mapColumn${idx}) return element{$mapColumn${idx}($col${idx})}{if(fn:exists($element${
-      //         element.table
-      //       }))then($element${element.table}[local-name()=$col${idx}]/${
-      //         moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
-      //       })else()}`;
-      //       if (idx < columnAsArray.length - 1) {
-      //         result += ",";
-      //       }
-      //     });
-      //     result += `)}`;
-      //   }
-      // }
-    }
-
     return result;
   }
   constructXQuery = (
@@ -1104,18 +1231,14 @@ abstract class XMLExtension<T> implements XMLInterface {
     const moduleVersion = this.version.modules.find(
       val => val.extension === this.spatialNamespace.prefix
     );
-    const constructTableQuery = (
-      result: string,
-      collection: any,
-      projection: any
-    ) => {
+    const constructTableQuery = (collection: any, projection: any): string => {
       const extensionQuery = this.constructExtensionQuery(
         this.spatialNamespace.prefix,
         collection.name,
         moduleVersion,
         projection
       );
-      result += `
+      result = `
       let $element${collection.name} := for $${collection.name}j in $${collection.name}i[1]/${projection.columns}
         return
         ${extensionQuery.spatialTypeSelection}
@@ -1123,6 +1246,99 @@ abstract class XMLExtension<T> implements XMLInterface {
       `;
       return result;
     };
+    const constructNestedTableQuery = (
+      collection: string,
+      projection: any
+    ): string => {
+      const localName =
+        this.spatialNamespace.prefix == "gml"
+          ? `$nestedcollection${collection}/local-name()`
+          : `$nestedcollection${collection}/@name`;
+      let result = `
+      let $nestedColumn${collection}:= 
+      for $col in $${collection}nestedcol/${projection.nestedColumns}
+        for $childCol in $${collection}nestedcol/${projection.nestedChildColumns}
+          return if(not($childCol instance of attribute()))
+          then(
+              element{concat(${localName},'__',$childCol/local-name())}{
+              attribute{'order'}{1},
+              attribute{'group'}{concat(${localName},'__',$childCol/local-name())},
+              if(count($childCol/*)>0)
+              then($childCol/*)
+              else($childCol/text())
+            }
+          )
+          else(
+            element{concat('_attribute__',${localName},'__',$col/local-name(),'__',$childCol/local-name())}{
+              attribute{'order'}{2},
+              attribute{'group'}{concat(${localName},'__',$childCol/local-name())},
+              $childCol/data()
+            }
+          )
+        `;
+      return result;
+    };
+
+    const buildNestedCollectionQuery = (
+      projection: any,
+      collection: string,
+      whereQuery: any,
+      extensionQuery: any,
+      joinOn?: any
+    ): string => {
+      let result = "";
+      result += `let $doc${collection} := `;
+      result += `for $${collection}i in ${this.version.getDocFunc(
+        collection,
+        this.db_name
+      )}//${extensionQuery.path}${whereQuery.root}
+      `;
+      if (joinOn) {
+        result += `where ${joinOn}`;
+      }
+      let resultArr: string[] = [`$nestedColumn${collection}`];
+      if (
+        projection.columns.length > 0 ||
+        projection.childColumns.length > 0 ||
+        projection.extendedColumns.length > 0
+      ) {
+        result += constructTableQuery({ name: collection }, projection);
+        resultArr.push(`$element${collection}`);
+      }
+      if (this.spatialNamespace.prefix == "gml") {
+        result += `let $nestedcollection${collection} := $${collection}i/*[@_is_collection="true"]`;
+      } else {
+        result += `let $nestedcollection${collection} := $${collection}i/*:ExtendedData/*/*[@_is_collection="true"]`;
+      }
+      result += `
+      
+      return if(exists($nestedcollection${collection}))then(
+        for $${collection}nestedcol in $nestedcollection${collection}/*${
+        whereQuery.nested
+      }
+        ${constructNestedTableQuery(collection, projection)}
+        return element{'result'}{(${resultArr.join(",")})}
+      )
+      else(`;
+      if (
+        projection.columns.length > 0 ||
+        projection.childColumns.length > 0 ||
+        projection.extendedColumns.length > 0
+      ) {
+        result += `element{'result'}{$element${collection}}`;
+      } else {
+        result += `element{'result'}{$${collection}i/*}`;
+      }
+      result += `)`;
+
+      return result;
+    };
+    const extensionQuery = this.constructExtensionQuery(
+      this.spatialNamespace.prefix,
+      collection,
+      moduleVersion,
+      projection
+    );
 
     const namespaces = this.constructSpatialNamespace(
       [this.spatialNamespace],
@@ -1145,54 +1361,57 @@ abstract class XMLExtension<T> implements XMLInterface {
       !Array.isArray(where) &&
       !Array.isArray(projection)
     ) {
-      const extensionQuery = this.constructExtensionQuery(
-        this.spatialNamespace.prefix,
-        collection,
-        moduleVersion,
-        projection
-      );
-      let whereQuery = "";
-      if (where.length > 0) {
-        whereQuery = `[${where}]`;
+      let whereQuery = { root: "", nested: "" };
+      if (where.root.length > 0) {
+        whereQuery.root = `[${where.root}]`;
       }
-      if (projection.rawColumns.length > 0) {
-        result += `let $doc${collection} := `;
+      if (where.nested.length > 0) {
+        whereQuery.nested = `[${where.nested}]`;
       }
-      result += `for $${collection}i in ${this.version.getDocFunc(
-        collection,
-        this.db_name
-      )}//${extensionQuery.path}${whereQuery}`;
-      if (groupby.length > 0) {
-        result += ` group by $${collection}group := ${groupby} `;
-      }
-      let projectionResult = "";
+      let projArr: string[] = [];
       if (
         projection.columns.length > 0 ||
         projection.childColumns.length > 0 ||
         projection.extendedColumns.length > 0
       ) {
-        result = constructTableQuery(result, { name: collection }, projection);
-        projectionResult = `$element${collection}`;
+        projArr.push(`$aggregaterow[1]/*`);
+      } else {
+        if (projection.nestedColumns.length > 0) {
+          projArr.push(`$aggregaterow[1]/*`);
+        }
       }
-
-      let funcProjQuery = "";
       if (projection.funcColumns.length > 0) {
-        funcProjQuery += `${projection.funcColumns}`;
+        projArr.push(projection.funcColumns);
       }
-
-      result += ` return element {'result'}
-      {(${funcProjQuery}${
-        projectionResult.length > 0 && funcProjQuery.length > 0 ? `,` : ``
-      }${projectionResult})}`;
-      if (projection.rawColumns.length > 0) {
+      result += `
+      ${buildNestedCollectionQuery(
+        projection,
+        collection,
+        whereQuery,
+        extensionQuery
+      )}`;
+      if (groupby.length == 0 && projection.funcColumns.length > 0) {
         result += `
-        for $i in $doc${collection}
+        let $aggregaterow := $doc${collection}
+        let $aggregated:=element{'result'}{(${projArr.join(",")})}`;
+      } else {
+        result += `
+        let $aggregated :=for $aggregaterow in $doc${collection} 
+          ${groupby.length > 0 ? `group by $group := ${groupby}` : ""}
+          return element{'result'}{(${projArr.join(",")})}`;
+      }
+      if (projection.rawColumns.length > 0) {
+        // order by $j/@order ascending
+        result += `
+        for $i in $aggregated
           let $projection :=for $j in $i/*
-            order by $j/@order ascending
             group by $group := $j/@group
-          return $j
+            let $first := min($j/@order)
+          return $j[@order=$first]
         return element{'result'}{$projection}
         `;
+      } else {
+        result += ` return $aggregated`;
       }
     } else {
       if (collection.length > 1 && where.length > 1 && projection.length > 1) {
@@ -1204,6 +1423,8 @@ abstract class XMLExtension<T> implements XMLInterface {
           groupby,
           columnAs,
           constructTableQuery,
+          constructNestedTableQuery,
+          buildNestedCollectionQuery,
           moduleVersion
         );
       } else {
@@ -1213,15 +1434,18 @@ abstract class XMLExtension<T> implements XMLInterface {
           moduleVersion,
           projection
         );
-        let whereQuery = "";
-        if (where[0].length > 0) {
-          whereQuery = `[${where[0]}]`;
+        let whereQuery = { root: "", nested: "" };
+        if (where[0].root.length > 0) {
+          whereQuery.root = `[${where[0].root}]`;
+        }
+        if (where[0].nested.length > 0) {
+          whereQuery.nested = `[${where[0].nested}]`;
         }
 
         result += `for $${collection[0].name}i in ${this.version.getDocFunc(
           collection[0].name,
           this.db_name
-        )}//${extensionQuery.path}${whereQuery}`;
+        )}//${extensionQuery.path}${whereQuery.root}`;
         if (groupby[0].length > 0) {
           result += ` group by $${collection[0].name}group := ${groupby[0]} `;
         }
@@ -1231,7 +1455,7 @@ abstract class XMLExtension<T> implements XMLInterface {
           projection[0].columns.length > 0 ||
           projection[0].childColumns.length > 0
         ) {
-          result = constructTableQuery(result, collection[0], projection[0]);
+          result += constructTableQuery(collection[0], projection[0]);
           projectionResult = `$element${collection[0].name}`;
         }
 
@@ -1279,28 +1503,32 @@ abstract class XMLExtension<T> implements XMLInterface {
     // })`
   };
 
-  constructSelectionQuery(where: any): string {
+  constructSelectionQuery(where: any): any {
     // console.log(where);
 
     if (!where) {
-      return "";
+      return { root: "", nested: "" };
     }
 
     const conditionalOperators = ["AND", "OR"];
 
-    const recursion = (where: any, numOfOr: number, depth: number): string => {
-      let selection = "";
+    const recursion = (
+      where: any,
+      numOfOr: number,
+      depth: number
+    ): { root: string; nested: string } => {
+      let selection = { root: "", nested: "" };
       const { operator } = where;
 
       if (operator == null) {
         if (where.type == "bool") {
-          return "";
+          return { root: "", nested: "" };
         }
         return selection;
       }
 
       if (where.left.type === "function" || where.right.type === "function") {
-        return this.constructFunctionQuery(where);
+        return { root: this.constructFunctionQuery(where), nested: "" };
       }
 
       const {
@@ -1317,7 +1545,15 @@ abstract class XMLExtension<T> implements XMLInterface {
         const { translation } = this.supportedOperators.find(
           ({ origin }) => origin === where.operator
         ) as Supported;
-        selection += `${resultLeft}${translation} ${resultRight}`;
+        selection.root += `${resultLeft.root}${translation} ${resultRight.root}`;
+        const tempNestedArr: string[] = [];
+        if (resultLeft.nested.length > 0) {
+          tempNestedArr.push(resultLeft.nested);
+        }
+        if (resultRight.nested.length > 0) {
+          tempNestedArr.push(resultRight.nested);
+        }
+        selection.nested = tempNestedArr.join(" and ");
         return selection;
       }
 
@@ -1340,41 +1576,57 @@ abstract class XMLExtension<T> implements XMLInterface {
         if (column.includes("_attribute__")) {
           let columnAttr = column.split("__");
           if (columnAttr.length == 2) {
-            selection += `@${columnAttr[1]} ${translation} ${
+            selection.root += `@${columnAttr[1]} ${translation} ${
               type === "number" ? value : `'${value}'`
             } `;
           }
           if (columnAttr.length == 3) {
             if (this.spatialNamespace.prefix == "gml") {
-              selection += `${access_col}${columnAttr[1]}`;
+              selection.root += `${access_col}${columnAttr[1]}`;
             }
             if (this.spatialNamespace.prefix == "kml") {
-              selection += `${access_col}ExtendedData/*/*[@name='${columnAttr[1]}']`;
+              selection.root += `${access_col}ExtendedData/*/*[@name='${columnAttr[1]}']`;
             }
-            selection += `/@${columnAttr[2]} ${translation} ${
+            selection.root += `/@${columnAttr[2]} ${translation} ${
               type === "number" ? value : `'${value}'`
             } `;
           }
-        } else {
-          selection += `${selectionPath} ${translation} ${
+        } else if (column.includes("__")) {
+          let nestedColumn = column.split("__");
+          if (this.spatialNamespace.prefix == "gml") {
+            selection.root += `${access_col}${nestedColumn[0]}/*`;
+          }
+          if (this.spatialNamespace.prefix == "kml") {
+            selection.root += `${access_col}ExtendedData/*/*[@name='${nestedColumn[0]}']/*`;
+          }
+          selection.root += `/${access_col}${nestedColumn[1]} ${translation} ${
             type === "number" ? value : `'${value}'`
           } `;
-          // selection += `@${column} ${translation} ${
+          selection.nested = `${access_col}${nestedColumn[1]} ${translation}${
+            type === "number" ? value : `'${value}'`
+          } `;
+        } else {
+          selection.root += `${selectionPath} ${translation} ${
+            type === "number" ? value : `'${value}'`
+          } `;
+          // console.log(selection, "selection");
+
+          // selection.root += `@${column} ${translation} ${
           //   type === "number" ? value : `'${value}'`
           // } or `;
-          // selection += `${selectionPath}/@${column} ${translation} ${
+          // selection.root += `${selectionPath}/@${column} ${translation} ${
           //   type === "number" ? value : `'${value}'`
           // } `;
         }
       } else if (type === "null") {
         if (operator === "IS") {
-          selection += `fn:exists(${selectionPath}/text()) or `;
-          selection += `fn:exists(@${column}/data()) or `;
-          selection += `fn:exists(${selectionPath}/@${column}/data())`;
+          selection.root += `fn:exists(${selectionPath}/text()) or `;
+          selection.root += `fn:exists(@${column}/data()) or `;
+          selection.root += `fn:exists(${selectionPath}/@${column}/data())`;
         } else if (operator === "IS NOT") {
-          selection += `not(fn:exists(${selectionPath}/text())) or `;
-          selection += `not(fn:exists(@${column}/data())) or `;
-          selection += `not(fn:exists(${selectionPath}/@${column}/data()))`;
+          selection.root += `not(fn:exists(${selectionPath}/text())) or `;
+          selection.root += `not(fn:exists(@${column}/data())) or `;
+          selection.root += `not(fn:exists(${selectionPath}/@${column}/data()))`;
         }
       } else if (type === "expr_list") {
         const values = value as any[];
@@ -1396,19 +1648,29 @@ abstract class XMLExtension<T> implements XMLInterface {
         if (column.includes("_attribute__")) {
           let columnAttr = column.split("__");
           if (columnAttr.length == 2) {
-            selection += `@${columnAttr[1]} ${translation} (${midselection}${lastselection}`;
+            selection.root += `@${columnAttr[1]} ${translation} (${midselection}${lastselection}`;
           }
           if (columnAttr.length == 3) {
             if (this.spatialNamespace.prefix == "gml") {
-              selection += `${access_col}${columnAttr[1]}`;
+              selection.root += `${access_col}${columnAttr[1]}`;
             }
             if (this.spatialNamespace.prefix == "kml") {
-              selection += `${access_col}ExtendedData/*/*[@name='${columnAttr[1]}']`;
+              selection.root += `${access_col}ExtendedData/*/*[@name='${columnAttr[1]}']`;
             }
-            selection += `/@${columnAttr[2]} ${translation} (${midselection}${lastselection}`;
+            selection.root += `/@${columnAttr[2]} ${translation} (${midselection}${lastselection}`;
           }
+        } else if (column.includes("__")) {
+          let nestedColumn = column.split("__");
+          if (this.spatialNamespace.prefix == "gml") {
+            selection.root += `${access_col}${nestedColumn[0]}/*`;
+          }
+          if (this.spatialNamespace.prefix == "kml") {
+            selection.root += `${access_col}ExtendedData/*/*[@name='${nestedColumn[0]}']/*`;
+          }
+          selection.root += `/${access_col}${nestedColumn[1]} ${translation} (${midselection}${lastselection}`;
+          selection.nested += `${access_col}${nestedColumn[1]} ${translation} (${midselection}${lastselection}`;
         } else {
-          selection += `${selectionPath} ${translation} (${midselection}${lastselection} or `;
+          selection.root += `${selectionPath} ${translation} (${midselection}${lastselection}`;
           // selection += `@${column} ${translation} (${midselection}${lastselection} or `;
           // selection += `${selectionPath}/@${column} ${translation} (${midselection}${lastselection}`;
         }
@@ -1433,23 +1695,41 @@ abstract class XMLExtension<T> implements XMLInterface {
     }
     if (columns.size == 0) {
       return {
-        columns: "(*|@*)",
+        columns:
+          this.spatialNamespace.prefix == "gml"
+            ? "(*[not(@_is_collection='true')]|@*)"
+            : "(*|@*)",
         childColumns: `($${childProjection}|$${childProjection}/@*)`,
         funcColumns: "",
-        extendedColumns: "*",
+        extendedColumns: "*[not(@_is_collection='true')]",
+        nestedColumns: "*|@*",
         rawColumns: [...columns],
+        nestedChildColumns: "$col|$col/@*",
       };
     }
     let tempresultArr: string[] = [];
     let tempchildResultArr: string[] = [];
-    let tempExtendedArr: string[] = [];
+    let tempExtendedArr: Set<string> = new Set();
+    let tempNestedArr: Set<string> = new Set();
+    let tempNestedChildArr: Set<string> = new Set();
     const ignoreQName = "*:";
     let funcArr: string[] = [];
     let arrColumns = [...columns];
+    arrColumns
+      .filter(val => proj_func_args_1.exec(val))
+      .forEach(val => {
+        const colname = proj_func_args_1.exec(val)!.groups!.colname;
+        columns.add(colname);
+      });
+
+    arrColumns = [...columns];
+
     arrColumns.forEach((column, index) => {
       let tempresult = ``;
       let tempchildResult = ``;
       let tempExtended = ``;
+      let tempNestedResult = ``;
+      let tempNestedChildResult = ``;
       if (column == "geometry") {
         // console.log(this.spatialNamespace.prefix);
 
@@ -1480,20 +1760,21 @@ abstract class XMLExtension<T> implements XMLInterface {
             val => val.postGISName == func_detail.fname
           )!;
           let pathProjection = "";
-          if (this.spatialNamespace.prefix == "gml") {
-            pathProjection += `/*:${func_detail.colname}`;
-          }
-          if (this.spatialNamespace.prefix == "kml") {
-            pathProjection += `/*:ExtendedData/*/*[@name='${func_detail.colname}']`;
-          }
-          funcArr.push(`element{'_func__${func_projection.name}__${
-            func_detail.colname
-          }'}{attribute{'order'}{'1'},attribute{'group'}{'_func__${
-            func_projection.name
-          }__${func_detail.colname}'},${func_projection.name}($${
-            collection.name
-          }i${func_detail.colname == "*" ? "" : pathProjection}
-            )}`);
+          pathProjection += `/*:${func_detail.colname}`;
+          // if (this.spatialNamespace.prefix == "gml") {
+          // }
+          // if (this.spatialNamespace.prefix == "kml") {
+          //   pathProjection += `/*:ExtendedData/*/*[@name='${func_detail.colname}']`;
+          // }
+          funcArr.push(
+            `element{'_func__${func_projection.name}__${
+              func_detail.colname
+            }'}{attribute{'order'}{'1'},attribute{'group'}{'_func__${
+              func_projection.name
+            }__${func_detail.colname}'},${func_projection.name}($aggregaterow${
+              func_detail.colname == "*" ? "" : pathProjection
+            })}`
+          );
         } else if (column.includes("_attribute__")) {
           let columnAttr = column.split("__");
           if (columnAttr.length == 2) {
@@ -1512,11 +1793,26 @@ abstract class XMLExtension<T> implements XMLInterface {
               tempchildResult += `$${childProjection}[local-name()='${columnAttr[1]}']/@${columnAttr[2]}`;
             }
           }
+          if (columnAttr.length == 4) {
+            tempNestedChildResult += `$col/@${columnAttr[3]}`;
+            tempNestedResult += `*:${columnAttr[2]}`;
+          }
+        } else if (column.includes("__")) {
+          let nestedColumn = column.split("__");
+          if (this.spatialNamespace.prefix == "kml") {
+            tempExtended += `@name='${nestedColumn[0]}'`;
+          }
+          // if (this.spatialNamespace.prefix == "gml") {
+          //   tempresult += `${ignoreQName}${nestedColumn[0]}`;
+          // }
+          tempNestedResult += `local-name()='${nestedColumn[1]}'`;
+          tempNestedChildResult += `$col`;
         } else {
           if (this.spatialNamespace.prefix == "gml") {
             tempresult += `${ignoreQName}${column}`;
             tempresult += `| @${column}`;
             tempchildResult += `$${childProjection}/@${column}`;
+            tempNestedResult += `local-name()='${column}'`;
           }
           if (this.spatialNamespace.prefix == "kml") {
             tempExtended += `@name='${column}'`;
@@ -1532,13 +1828,21 @@ abstract class XMLExtension<T> implements XMLInterface {
         tempchildResultArr.push(tempchildResult);
       }
       if (tempExtended.length > 0) {
-        tempExtendedArr.push(tempExtended);
+        tempExtendedArr.add(tempExtended);
+      }
+      if (tempNestedResult.length > 0) {
+        tempNestedArr.add(tempNestedResult);
+      }
+      if (tempNestedChildResult.length > 0) {
+        tempNestedChildArr.add(tempNestedChildResult);
       }
     });
     let result = ``;
     let childResult = ``;
     let extendedResult = ``;
-    if (tempresultArr.length > 0 || tempExtendedArr.length > 0) {
+    let nestedResult = ``;
+    let nestedChildResult = ``;
+    if (tempresultArr.length > 0 || [...tempExtendedArr].length > 0) {
       tempchildResultArr.push(`$${childProjection}`);
       if (this.spatialNamespace.prefix == "kml") {
         result += `*:ExtendedData`;
@@ -1552,12 +1856,19 @@ abstract class XMLExtension<T> implements XMLInterface {
         result = `(${tempresultArr.join(" | ")})`;
       }
     }
-    if (tempExtendedArr.length > 0) {
-      extendedResult = `*[${tempExtendedArr.join(" or ")}]`;
+    if ([...tempExtendedArr].length > 0) {
+      extendedResult = `*[${[...tempExtendedArr].join(" or ")}]`;
     }
     if (tempchildResultArr.length > 0) {
       childResult = `(${tempchildResultArr.join(" | ")})`;
     }
+    if ([...tempNestedArr].length > 0) {
+      nestedResult += `*[${[...tempNestedArr].join(" or ")}]`;
+    }
+    if ([...tempNestedChildArr].length > 0) {
+      nestedChildResult += `(${[...tempNestedChildArr].join(" | ")})`;
+    }
+
     // console.log(tempresultArr, "tempres", tempchildResultArr, "tempchild");
     let funcResult = funcArr.join(",");
     // console.log(result, childResult);
@@ -1568,6 +1879,8 @@ abstract class XMLExtension<T> implements XMLInterface {
       funcColumns: funcResult,
       extendedColumns: extendedResult,
       rawColumns: arrColumns,
+      nestedColumns: nestedResult,
+      nestedChildColumns: nestedChildResult,
     };
   }
   constructGroupByQuery(groupby: any, collection: any): string {
@@ -1576,13 +1889,13 @@ abstract class XMLExtension<T> implements XMLInterface {
     }
     let groupbyQuery = ``;
     groupby.forEach((el: any, idx: number) => {
-      groupbyQuery += `$${el.table}i/`;
-      if (this.spatialNamespace.prefix == "gml") {
-        groupbyQuery += `*:${el.column}`;
-      }
-      if (this.spatialNamespace.prefix == "kml") {
-        groupbyQuery += `*:ExtendedData/*/*[@name='${el.column}']`;
-      }
+      groupbyQuery += `$aggregaterow/`;
+      groupbyQuery += `*:${el.column}`;
+      // if (this.spatialNamespace.prefix == "gml") {
+      // }
+      // if (this.spatialNamespace.prefix == "kml") {
+      //   groupbyQuery += `*:ExtendedData/*/*[@name='${el.column}']`;
+      // }
       if (idx < groupby.length - 1) {
         groupbyQuery += `,`;
       }

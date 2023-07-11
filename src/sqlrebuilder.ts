@@ -175,6 +175,7 @@ function rebuildFromTree(
   selectTree.columns = driver.addSelectTreeColumnsRebuild(sample, listColumns);
 
   let { columns, mapType } = driver.addColumnAndMapKeyRebuild(sample);
+  // console.log(selectTree.columns, columns, mapType);
   let undefinedCol;
   if (tree.columns != "*") {
     undefinedCol = tree.columns.filter(
@@ -184,10 +185,12 @@ function rebuildFromTree(
         )
     );
     if (undefinedCol.length > 0) {
-      // console.log(selectTree.columns, columns, mapType);
       const replaceCol = undefinedCol.map(el => ({
         prevCol: columns.find(
-          val => val.includes("_attribute__") && val.includes(el.expr.column)
+          val =>
+            !val.includes("_func__") &&
+            val.includes("__") &&
+            val.includes(el.expr.column)
         ),
         replacedCol: el.expr.column,
       }));
@@ -301,6 +304,11 @@ function rebuildJoinedWhere(where: any, joinAs: string, driver: Extension) {
         where.table = joinAs;
         return tempWhere;
       }
+      if (where.type == "function") {
+        where.args.value.forEach((element: any, idx: number) => {
+          return recursive(element);
+        });
+      }
       return where;
     }
 
@@ -403,6 +411,7 @@ function rebuildTree(
     dataList[0].as,
     driver
   );
+  console.log(JSON.stringify(newTree.where, null, 2));
 
   newTree.columns = rebuildJoinedColumn(newTree, joined, driver);
   if (newTree.columns != "*") {

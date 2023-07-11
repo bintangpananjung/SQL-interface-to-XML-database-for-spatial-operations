@@ -48,7 +48,7 @@ async function getData(
   // let groupbyQueryList: any[] = [];
 
   collections.forEach((col, idx) => {
-    const { as } = col;
+    const { as, name } = col;
 
     const selectionQuery = driver.constructSelectionQuery(groupWhere[as]);
     // console.log(selectionQuery, "where");
@@ -58,9 +58,13 @@ async function getData(
       : new Set<string>();
     let groupbyQuery = "";
     if (driver.constructGroupByQuery) {
-      const groupbyCol = tree.groupby?.filter(
-        val => val.type == "column_ref" && val.table == as
-      );
+      const groupbyCol = tree.groupby
+        ?.filter(val => val.type == "column_ref" && val.table == as)
+        .map(val => {
+          const temp = { ...val };
+          temp.table = name;
+          return temp;
+        });
       // console.log(groupbyCol, "groupbyCol");
 
       groupbyQuery = driver.constructGroupByQuery(groupbyCol, col);
@@ -86,12 +90,42 @@ async function getData(
     let groupbyQuery = ``;
     if (driver.constructGroupByQuery) {
       groupbyQuery = driver.constructGroupByQuery(
-        tree.groupby?.filter(val => val.type == "column_ref"),
+        tree.groupby
+          ?.filter(val => val.type == "column_ref")
+          .map(val => {
+            const temp = { ...val };
+            temp.table = collections.find(el => el.as == val.table).name;
+            let tempCol = val.column;
+            if (columnAs != "*") {
+              const columnAsWithTable = (columnAs as Map<string, any[]>).get(
+                val.table!
+              );
+              if (columnAsWithTable) {
+                tempCol = columnAsWithTable.find(
+                  el => el.column == val.column
+                ).as;
+              }
+            }
+            temp.column = tempCol;
+            return temp;
+          }),
         collections
       );
     }
     const result = driver.getResult(
-      collections,
+      collections.map(val => {
+        if (val.join && val.on && val.on.type == "binary_expr") {
+          const temp = { ...val };
+          temp.on.left.table = collections.find(
+            el => el.as == val.on.left.table
+          ).name;
+          temp.on.right.table = collections.find(
+            el => el.as == val.on.right.table
+          ).name;
+          return temp;
+        }
+        return val;
+      }),
       selectionQueryList,
       projectionQueryList,
       groupbyQuery,
@@ -117,7 +151,7 @@ async function getData(
   } else {
     resultList = await Promise.all(resultPromise);
   }
-  console.log(resultList);
+  // console.log(resultList);
 
   console.log(
     `waktu pembangunan query dan eksekusi pada DBMS adalah ${
