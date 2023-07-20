@@ -1503,7 +1503,7 @@ abstract class XMLExtension<T> implements XMLInterface {
         //   return $j[@order=$first]
         // return element{'result'}{$projection}
         // `;
-        result += `for $i in $aggregated
+        result += ` for $i in $aggregated
         let $projection :=for $j in $i/*
           order by $j/@order ascending
           group by $group := $j/@group

@@ -139,6 +139,8 @@ router.post("/", async (req, res) => {
     const totalfetchdata = 0;
     const totalfinalresultdata = results ? results?.finalResult.rows.length : 0;
 
+    // totalRows: totalfinalresultdata,
+
     res.render("index", {
       title,
       input: sql,
@@ -163,8 +165,11 @@ router.post("/", async (req, res) => {
       dbms,
       totalGetField: results?.totalGetField,
       version: version,
+      dbms_executionTime: gis.driver.executionTime[0],
+      pg_executionTime: gis.executionTime,
+      dbmsRows: gis.driver.totalRow,
     });
-    gis.driver.executionTime = [];
+    // dbmsGIS.driver.executionTime = [];
   } catch (e) {
     res.render("index", {
       title,
@@ -181,6 +186,8 @@ router.post("/", async (req, res) => {
     });
     gis.driver.executionTime = [];
   }
+  gis.driver.executionTime = [];
+  gis.driver.totalRow = [];
 });
 
 module.exports = router;

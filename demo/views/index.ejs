@@ -8,7 +8,7 @@
     </head>
     <body>
         <div class="container">
-            <h1 style="color: red">Sistem Perbaikan</h1>
+            <h1 style="color: red">Antarmuka SQL untuk DBMS dokumen</h1>
 
             <div class="card">
                 <div class="card-header" id="sql">
@@ -126,6 +126,8 @@
                         </table>
                         <br>
                         <h6>Total <i>collection</i> yang diambil dari DBMS berorientasi dokumen</i></h6><%= statistic.totalfetchdata %>
+                        <br>
+                        <h6>Total baris/data dari hasil DBMS dokumen <i>query</i></h6> <%= dbmsRows %>
                         <br>
                         <h6>Total baris/data dari hasil akhir <i>query</i></h6> <%= statistic.totalfinalresultdata %>
                     </div>

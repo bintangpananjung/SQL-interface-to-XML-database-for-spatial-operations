@@ -147,6 +147,8 @@ class PostgisExtension {
     tree: Select,
     clauses: any[]
   ): { mapColumns: Map<string, Set<string>>; funcColumns: any[] } => {
+    console.log(tree, "asdadsadasd");
+
     const mapColumnsPerTable = new Map<string, Set<string>>();
     const tempFuncColumns: any[] = [];
     const recursive = (ast: any) => {
@@ -224,6 +226,7 @@ class PostgisExtension {
 
     recursive(tree.columns);
     recursive(tree.from);
+    recursive(tree.groupby);
     for (const clause of clauses) {
       recursive(clause);
     }
