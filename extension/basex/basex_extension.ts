@@ -9,6 +9,8 @@ var basex = require("basex");
 
 class BaseXExtension extends XMLExtension<typeof basex> {
   version: XMLConfig;
+  totalRow: number[] = [];
+  executionTime: number[] = [];
   supportPreExecutionQuery: boolean = true;
   canJoin: boolean = true;
   supportedProjectionFunctions: {
@@ -43,6 +45,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
             { name: "distance", postGISName: "ST_Distance", args: 2 },
             { name: "within", postGISName: "ST_Within", args: 2 },
             { name: "dimension", postGISName: "ST_Dimension", args: 1 },
+            { name: "geometry-type", postGISName: "ST_GeometryType", args: 1 },
           ],
           getSTAsTextfunc(node: any) {
             return `geo:as-text(${node})`;
@@ -68,8 +71,11 @@ class BaseXExtension extends XMLExtension<typeof basex> {
         {
           supportedSpatialFunctionPrefix: [
             { name: "distance", postGISName: "ST_Distance", args: 2 },
+            { name: "intersects", postGISName: "ST_Intersects", args: 2 },
             { name: "within", postGISName: "ST_Within", args: 2 },
             { name: "dimension", postGISName: "ST_Dimension", args: 1 },
+            { name: "geometry-type", postGISName: "ST_GeometryType", args: 1 },
+            { name: "srid", postGISName: "ST_SRID", args: 1 },
           ],
           getSTAsTextfunc(node: any) {
             return `geo:as-text(${node})`;
@@ -136,14 +142,21 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     },
     {
       regex:
-        /(?<fname>.*)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant>[0-9\.]*)/g,
-      matches: ["ST_Dimension", "ST_AsText"],
+        /(?<fname>.*)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<|!=) '(?<constant>.*)'/g,
+      matches: ["ST_GeometryType", "ST_AsText"],
       version: ["7.6", "9.7"],
     },
     {
       regex:
-        /(?<fname>.*)\(ST_AsText\((ST_GeomFromGML|ST_GeomFromKML)\('(?<constant1>.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant2>[0-9\.]*)/g,
-      matches: ["ST_Distance", "ST_Within"],
+        /(?<fname>.*)\((?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<|!=) (?<constant>[a-zA-Z0-9_\.]*)/g,
+      matches: ["ST_Dimension", "ST_SRID"],
+      version: ["7.6", "9.7"],
+    },
+
+    {
+      regex:
+        /(?<fname>.*)\(ST_AsText\((ST_GeomFromGML|ST_GeomFromKML)\('(?<constant1>.*)'\)\), (?<tname>[a-zA-Z0-9_]+)\.(?<colname>[a-zA-Z0-9_]+)\) (?<operator>=|<=|>=|>|<) (?<constant2>([0-9]+(\.[0-9]*)?|true|false))/g,
+      matches: ["ST_Distance", "ST_Within", "ST_Intersects"],
       version: ["7.6", "9.7"],
     },
   ];
@@ -320,11 +333,9 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     try {
       let getResultTime = new Date().getTime();
       result = await query;
-      console.log(
-        `waktu eksekusi pada DBMS BaseX adalah ${
-          new Date().getTime() - getResultTime
-        }ms`
-      );
+      let execTime = new Date().getTime() - getResultTime;
+      this.executionTime.push(execTime);
+      console.log(`waktu eksekusi pada DBMS BaseX adalah ${execTime}ms`);
       // console.log(result);
     } catch (error) {
       // console.log(error);
@@ -387,6 +398,17 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     let result = `geo:${funcName}(${constant1}, *[${tempSpatialTypes.join(
       " or "
     )}]/*) ${operator} ${constant2}`;
+    console.log(constant2, "tesconstant");
+
+    if (funcName == "intersects") {
+      result = `geo:${funcName}(${constant1}, *[${tempSpatialTypes.join(
+        " or "
+      )}]/*)`;
+
+      if (constant2 == "false" || constant2 === 0) {
+        result = `not(${result})`;
+      }
+    }
 
     return result;
   }
@@ -395,6 +417,7 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     funcName: string
   ): string {
     const { fname, tname, colname, constant, operator } = groups as any;
+    let constanted = constant;
     let spatialTypes = this.supportedSpatialType.find(element => {
       return element.extType == this.spatialNamespace.prefix;
     });
@@ -402,10 +425,15 @@ class BaseXExtension extends XMLExtension<typeof basex> {
     spatialTypes?.types.forEach(element => {
       tempSpatialTypes.push(`*/local-name()='${element}'`);
     });
+
     let result = `geo:${funcName}(*[${tempSpatialTypes.join(
       " or "
-    )}]/*) ${operator} ${constant}`;
-
+    )}]/*) ${operator} ${constanted}`;
+    if (funcName == "geometry-type") {
+      result = `local-name(geo:${funcName}(*[${tempSpatialTypes.join(
+        " or "
+      )}]/*)) ${operator} ${constanted}`;
+    }
     return result;
   }
 }

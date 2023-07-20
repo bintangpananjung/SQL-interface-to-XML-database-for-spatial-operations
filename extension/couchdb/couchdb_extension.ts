@@ -7,6 +7,8 @@ import { AutoEncryptionExtraOptions } from "mongodb";
 
 class CouchDbExtension extends JsonExtension<any> {
   supportPreExecutionQuery: boolean = false;
+  executionTime: number[] = [];
+  totalRow: number[] = [];
   canJoin: boolean = false;
   supportedProjectionFunctions: {
     regex: RegExp;

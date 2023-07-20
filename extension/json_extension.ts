@@ -6,8 +6,10 @@ import { doubleTheQuote } from "../src/sqlrebuilder";
 
 abstract class JsonExtension<T> implements Extension {
   abstract supportPreExecutionQuery: boolean;
+  abstract totalRow: number[];
   abstract connect(): void;
   abstract getAllFields(col_name: string): Promise<string[]>;
+  abstract executionTime: number[];
   abstract supportedProjectionFunctions: {
     regex: RegExp;
     name: string;

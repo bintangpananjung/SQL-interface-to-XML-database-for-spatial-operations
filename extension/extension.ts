@@ -50,6 +50,8 @@ interface Extension {
   extensionType: string;
   supportPreExecutionQuery: boolean;
   canJoin: boolean;
+  executionTime: number[];
+  totalRow: number[];
   // canAggregationAndGroupBy: boolean;
 
   connect(): void;

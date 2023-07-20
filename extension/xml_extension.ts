@@ -14,6 +14,8 @@ abstract class XMLExtension<T> implements XMLInterface {
     matches: string[];
     version?: string[];
   }[];
+  abstract totalRow: number[];
+  abstract executionTime: number[];
   abstract spatialModuleNamespaces: any[];
   abstract supportedXMLExtensionType: string[];
   abstract supportedSpatialType: { extType: string; types: string[] }[];
@@ -114,8 +116,8 @@ abstract class XMLExtension<T> implements XMLInterface {
           let path = column;
           let nodes: any = xpath.select(`/result/${path}`, doc);
           if (nodes.length == 0) {
-            if (!column.includes("__")) {
-              path = `*[@group='${column}'][1]`;
+            if (column.includes("_undef__")) {
+              path = `*[@group='${column.split("__")[1]}'][1]`;
               nodes = xpath.select(`/result/${path}`, doc);
             }
           }
@@ -169,15 +171,15 @@ abstract class XMLExtension<T> implements XMLInterface {
                 });
               } else {
                 row.value.push({
-                  type: "string",
-                  value: "",
+                  type: "null",
+                  value: null,
                 });
               }
             }
           } else {
             row.value.push({
-              type: "string",
-              value: "",
+              type: "null",
+              value: null,
             });
           }
         }
@@ -513,7 +515,7 @@ abstract class XMLExtension<T> implements XMLInterface {
         else (
           if(not($${collection}j instance of attribute()))
           then(
-            for $${collection}k in (${projection.childColumns})
+            for $${collection}k in ${projection.childColumns}
             return if(not($${collection}k instance of attribute()))
             then(
                 element{$${collection}k/local-name()}{
@@ -621,6 +623,9 @@ abstract class XMLExtension<T> implements XMLInterface {
     buildNestedCollectionQuery: any,
     moduleVersion: any
   ): string {
+    const constructNoMatchedProjection = (elements: string[]) => {
+      return elements.map(val => `exists(${val})`).join(" or ");
+    };
     let whereQuery: any[] = [];
     where.forEach((element, idx) => {
       whereQuery.push({
@@ -640,36 +645,20 @@ abstract class XMLExtension<T> implements XMLInterface {
     let getUniqueColumnOnly: string = `return element {'result'}{for $node in distinct-values($joinedCol/*/local-name()) return $joinedCol/*[local-name() eq $node][1]}`;
     if (columnAs) {
       if (columnAs == "*") {
+        attributeHandleQuery = `return $aggregated`;
+      } else {
         attributeHandleQuery = `for $i in $aggregated
-        let $projection :=for $j in $i/*
-          group by $group := $j/@group
-          let $first := min($j/@order)
-        return $j[@order=$first]
-      return element{'result'}{$projection}`;
+          let $projection :=for $j in $i/*
+            order by $j/@order ascending
+            group by $group := $j/@group
+          return $j
+        return element{'result'}{$projection}`;
         //   attributeHandleQuery = `for $i in $aggregated
         //   let $projection :=for $j in $i/*
-        //     order by $j/@order ascending
         //     group by $group := $j/@group
-        //   return $j
+        //     let $first := min($j/@order)
+        //   return $j[@order=$first]
         // return element{'result'}{$projection}`;
-      } else {
-        columnAsArray.forEach((element, index) => {
-          mapColumnArray.push(
-            `let $mapColumn${index} := map {${element.col
-              .map(
-                (val: any, idxcol: any) =>
-                  `'${val.column}' ${this.version.mapOperator} '${val.as}'`
-              )
-              .join(",")}}`
-          );
-          mapColumnResult.push(`for $col${index} in map:keys($mapColumn${index}) return element{$mapColumn${index}($col${index})}{
-            attribute{'order'}{1},
-            attribute{'group'}{$mapColumn${index}($col${index})},
-            $element${element.table}[local-name()=$col${index}]/${
-            moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
-          }}`);
-        });
-        attributeHandleQuery = `return $aggregated`;
       }
     }
     collection.forEach((element, idx) => {
@@ -720,7 +709,7 @@ abstract class XMLExtension<T> implements XMLInterface {
       return element{'result'}{(${[...aggregationProjection].join(",")})}`;
     }
 
-    if (joinType == "INNER JOIN") {
+    if (joinType == "INNER JOIN" || !joinType) {
       const recursion = (join: any, depth: number): string => {
         let joinOnQuery = "";
         if (join.left == null || join.right == null) {
@@ -790,6 +779,8 @@ abstract class XMLExtension<T> implements XMLInterface {
       let getTwoNestedTableQuery: string[] = [];
       let getTwoTableQuery: string[] = [];
       let nestedResult: string = "";
+      let nestedResultLeft: string = "";
+      let nestedResultRight: string = "";
       let noNestedResult: string = "";
       const resultOfCartesianProduct: string[] = [];
       const resultOfCartesianProductNested: string[] = [];
@@ -829,7 +820,9 @@ abstract class XMLExtension<T> implements XMLInterface {
         }
 
         getTwoNestedCollections.push(
-          `let $nestedcollection${element.name} := $${element.name}i/*[@_is_collection="true"]`
+          `let $nestedcollection${element.name} := $${element.name}i/${
+            this.spatialNamespace.prefix == "kml" ? "*:ExtendedData/*/" : ""
+          }*[@_is_collection="true"]`
         );
         iterateTwoNestedCollections.push(
           `$${element.name}nestedcol in $nestedcollection${element.name}/*${whereQuery[idx].nested}`
@@ -842,54 +835,115 @@ abstract class XMLExtension<T> implements XMLInterface {
           constructNestedTableQuery(element.name, projection[idx])
         );
       });
+      const constructResultColumnAll = (resultArr: Array<string>): string => {
+        let temp = `
+        if(${constructNoMatchedProjection(resultArr)}) then(
+          let $joinedCol :=  element{'result'}{(${resultArr.join(",")})}
+          ${getUniqueColumnOnly}
+        )
+        else()
+        `;
+        return temp;
+      };
+      const constructResultColumnProj = (
+        resultArr: Array<string>,
+        ret?: string
+      ): string => {
+        let temp = `
+        ${mapColumnArray.join(" ")}
+        ${ret ? ret : ""} if(${constructNoMatchedProjection([
+          ...resultArr,
+          ...mapColumnResult,
+        ])}) then(
+        let $joinedCol:= element{'result'}{(
+          ${resultArr.join(",")}${
+          columnAsArray.length > 0 && resultArr.length > 0 ? "," : ""
+        }
+          ${mapColumnResult.join(",")}
+        )}
+        ${getUniqueColumnOnly}
+        )
+        else()`;
+        return temp;
+      };
       if (columnAs) {
         if (columnAs == "*") {
-          nestedResult = `let $joinedCol :=  element{'result'}{(${resultOfCartesianProductNested.join(
-            ","
-          )})}
-          ${getUniqueColumnOnly}
-          `;
-          noNestedResult = `let $joinedCol :=  element{'result'}{(${resultOfCartesianProduct.join(
-            ","
-          )})}
-          ${getUniqueColumnOnly}`;
+          nestedResult = `return ${constructResultColumnAll(
+            resultOfCartesianProductNested
+          )}`;
+          nestedResultLeft = `return ${constructResultColumnAll(
+            resultOfCartesianProductNested.filter(
+              val => `$nestedColumn${collection[1].name}` != val
+            )
+          )}`;
+          nestedResultRight = `return ${constructResultColumnAll(
+            resultOfCartesianProductNested.filter(
+              val => `$nestedColumn${collection[0].name}` != val
+            )
+          )}`;
+          noNestedResult = constructResultColumnAll(resultOfCartesianProduct);
         } else {
-          nestedResult = `
-          ${mapColumnArray.join(" ")}
-          let $joinedCol:= element{'result'}{(
-            ${resultOfCartesianProductNested.join(",")}${
-            columnAsArray.length > 0 &&
-            resultOfCartesianProductNested.length > 0
-              ? ","
-              : ""
-          }
-            ${mapColumnResult.join(",")}
-          )}
-          ${getUniqueColumnOnly}
-          `;
-          noNestedResult = `
-          ${mapColumnArray.join(" ")}
-          let $joinedCol:= element{'result'}{(
-            ${
-              mapColumnResult.length > 0
-                ? mapColumnResult.join(",")
-                : resultOfCartesianProduct.join(",")
-            }
-          )}
-          ${getUniqueColumnOnly}
-          `;
+          columnAsArray.forEach((element, index) => {
+            mapColumnArray.push(
+              `let $mapColumn${index} := map {${element.col
+                .map(
+                  (val: any, idxcol: any) =>
+                    `'${val.column}' ${this.version.mapOperator} '${val.as}'`
+                )
+                .join(",")}}`
+            );
+            // $element${element.table}[local-name()=$col${index}]/${
+            //   moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
+            mapColumnResult.push(`for $col${index} in map:keys($mapColumn${index}) 
+            return if(count($element${element.table}[local-name()=$col${index}]/*)>0 or $element${element.table}[local-name()=$col${index}]/text())
+            then(element{$mapColumn${index}($col${index})}{
+              attribute{'order'}{$element${element.table}[local-name()=$col${index}]/@order},
+              attribute{'group'}{$mapColumn${index}($col${index})},
+              if(count($element${element.table}[local-name()=$col${index}]/*)>0)
+              then($element${element.table}[local-name()=$col${index}]/*)
+              else($element${element.table}[local-name()=$col${index}]/text())
+            })else()`);
+          });
+          nestedResult = `${constructResultColumnProj(
+            resultOfCartesianProductNested,
+            "return"
+          )}`;
+          nestedResultLeft = `${constructResultColumnProj(
+            resultOfCartesianProductNested.filter(
+              val => `$nestedColumn${collection[1].name}` != val
+            ),
+            "return"
+          )}`;
+          nestedResultRight = `${constructResultColumnProj(
+            resultOfCartesianProductNested.filter(
+              val => `$nestedColumn${collection[0].name}` != val
+            ),
+            "return"
+          )}`;
+          noNestedResult = constructResultColumnProj(
+            resultOfCartesianProduct,
+            "return"
+          );
         }
       }
 
       result += `
       let $doc:= for ${iterateTwoCollections.join(",")}
-      where ${joinOn}
+      ${joinOn && joinOn.length > 0 ? `where ${joinOn}` : ""}
       ${getTwoTableQuery.join(" ")}
       ${getTwoNestedCollections.join(" ")}
-      return if(${checkTwoNestedCollections.join(" or ")})then(
+      return if(${checkTwoNestedCollections.join(" and ")})then(
         for ${iterateTwoNestedCollections.join(",")}
         ${getTwoNestedTableQuery.join(" ")}
         ${nestedResult}
+      )else if(${checkTwoNestedCollections[0]})then(
+        for ${iterateTwoNestedCollections[0]}
+        ${getTwoNestedTableQuery[0]}
+        ${nestedResultLeft}
+      )else if(${checkTwoNestedCollections[1]})then(
+        for ${iterateTwoNestedCollections[1]}
+        ${getTwoNestedTableQuery[1]}
+        ${nestedResultRight}
       )
       else(
         ${noNestedResult}
@@ -1030,9 +1084,15 @@ abstract class XMLExtension<T> implements XMLInterface {
         };
 
         if (right.type === "column_ref") {
-          joinOnQuery += `$right/${constructColumnOn(
-            right.column
-          )} ${translation} $left/${constructColumnOn(left.column)} `;
+          // const leftTable = collection.findIndex((el)=>el.name == left.table)!
+          const rightTable = collection.findIndex(
+            el => el.name == right.table
+          )!;
+          joinOnQuery += `${
+            rightTable == 1 ? `$right` : "$left"
+          }/${constructColumnOn(right.column)} ${translation} ${
+            rightTable == 1 ? `$left` : "$right"
+          }/${constructColumnOn(left.column)} `;
         }
 
         return joinOnQuery;
@@ -1088,6 +1148,35 @@ abstract class XMLExtension<T> implements XMLInterface {
       const right = variables.right;
       let noMatchedResult = ``;
       let matchedResult = ``;
+      if (columnAs && columnAs != "*") {
+        columnAsArray.forEach((element, index) => {
+          mapColumnArray.push(
+            `let $mapColumn${index} := map {${element.col
+              .map(
+                (val: any, idxcol: any) =>
+                  `'${val.column}' ${this.version.mapOperator} '${val.as}'`
+              )
+              .join(",")}}`
+          );
+          // $element${element.table}[local-name()=$col${index}]/${
+          //   moduleVersion?.getSTAsTextfunc() ? "text()" : "*"
+          mapColumnResult.push(`for $col${index} in map:keys($mapColumn${index}) 
+          return for $childCol in $element${element.table}[local-name()=$col${index} or @group=$col${index}]
+          return
+          element{if(exists($element${element.table}[local-name()=$col${index}]))then($mapColumn${index}($col${index}))else($childCol/local-name())}{
+            attribute{'order'}{$childCol/@order},
+            attribute{'group'}
+            {
+              if(exists($element${element.table}[local-name()=$col${index}]))
+              then($mapColumn${index}($col${index}))
+              else($childCol/local-name())
+            },
+            if(count($childCol/*)>0)
+            then($childCol/*)
+            else($childCol/text())
+          }`);
+        });
+      }
       if (joinType == "LEFT JOIN") {
         if (columnAs) {
           if (columnAs == "*") {
@@ -1139,7 +1228,7 @@ abstract class XMLExtension<T> implements XMLInterface {
         let $doc:= for $left in $doc${left.collection}
         let $element${left.collection} :=$left/*
         let $matchedRow := for $right in $doc${right.collection}
-        where ${joinOn}
+        ${joinOn && joinOn.length > 0 ? `where ${joinOn}` : ""}
         let $element${right.collection}:=$right/*
         ${matchedResult}
         return if(empty($matchedRow)) then(
@@ -1204,7 +1293,7 @@ abstract class XMLExtension<T> implements XMLInterface {
         let $doc:= for $left in $doc${right.collection}
         let $element${right.collection} :=$left/*
         let $matchedRow := for $right in $doc${left.collection}
-        where ${joinOn}
+        ${joinOn && joinOn.length > 0 ? `where ${joinOn}` : ""}
         let $element${left.collection}:=$right/*
         ${matchedResult}
         return if(empty($matchedRow)) then(
@@ -1228,6 +1317,8 @@ abstract class XMLExtension<T> implements XMLInterface {
     groupby: any[] | any,
     columnAs: any
   ) => {
+    console.log(collection, "collection");
+
     const moduleVersion = this.version.modules.find(
       val => val.extension === this.spatialNamespace.prefix
     );
@@ -1261,8 +1352,8 @@ abstract class XMLExtension<T> implements XMLInterface {
           return if(not($childCol instance of attribute()))
           then(
               element{concat(${localName},'__',$childCol/local-name())}{
-              attribute{'order'}{1},
-              attribute{'group'}{concat(${localName},'__',$childCol/local-name())},
+              attribute{'order'}{4},
+              attribute{'group'}{$childCol/local-name()},
               if(count($childCol/*)>0)
               then($childCol/*)
               else($childCol/text())
@@ -1270,8 +1361,8 @@ abstract class XMLExtension<T> implements XMLInterface {
           )
           else(
             element{concat('_attribute__',${localName},'__',$col/local-name(),'__',$childCol/local-name())}{
-              attribute{'order'}{2},
-              attribute{'group'}{concat(${localName},'__',$childCol/local-name())},
+              attribute{'order'}{5},
+              attribute{'group'}{$childCol/local-name()},
               $childCol/data()
             }
           )
@@ -1325,7 +1416,9 @@ abstract class XMLExtension<T> implements XMLInterface {
         projection.childColumns.length > 0 ||
         projection.extendedColumns.length > 0
       ) {
-        result += `element{'result'}{$element${collection}}`;
+        result += `
+        if(exists($element${collection})) then(element{'result'}{$element${collection}})
+        else()`;
       } else {
         result += `element{'result'}{$${collection}i/*}`;
       }
@@ -1402,14 +1495,20 @@ abstract class XMLExtension<T> implements XMLInterface {
       }
       if (projection.rawColumns.length > 0) {
         // order by $j/@order ascending
-        result += `
-        for $i in $aggregated
-          let $projection :=for $j in $i/*
-            group by $group := $j/@group
-            let $first := min($j/@order)
-          return $j[@order=$first]
-        return element{'result'}{$projection}
-        `;
+        // result += `
+        // for $i in $aggregated
+        //   let $projection :=for $j in $i/*
+        //     group by $group := $j/@group
+        //     let $first := min($j/@order)
+        //   return $j[@order=$first]
+        // return element{'result'}{$projection}
+        // `;
+        result += `for $i in $aggregated
+        let $projection :=for $j in $i/*
+          order by $j/@order ascending
+          group by $group := $j/@group
+        return $j
+      return element{'result'}{$projection}`;
       } else {
         result += ` return $aggregated`;
       }
@@ -1473,7 +1572,7 @@ abstract class XMLExtension<T> implements XMLInterface {
       }
     }
 
-    console.log(result);
+    // console.log(result);
     return result;
     // `for $i in ${this.version.getDocFunc(
     //   collection,
@@ -1528,6 +1627,8 @@ abstract class XMLExtension<T> implements XMLInterface {
       }
 
       if (where.left.type === "function" || where.right.type === "function") {
+        console.log("kenapa ini", where);
+
         return { root: this.constructFunctionQuery(where), nested: "" };
       }
 
@@ -1566,11 +1667,11 @@ abstract class XMLExtension<T> implements XMLInterface {
       const access_col = "*:";
       let selectionPath = ``;
       if (this.spatialNamespace.prefix == "gml") {
-        selectionPath += `${access_col}${column}`;
+        selectionPath = `${access_col}${column}`;
       }
       if (this.spatialNamespace.prefix == "kml") {
         // *:ExtendedData/*/*[@name='nama']='Masjid Algufron Malendeng'
-        selectionPath += `${access_col}ExtendedData/*/*[@name='${column}']`;
+        selectionPath = `${access_col}ExtendedData/*/*[@name='${column}']`;
       }
       if (type === "number" || type === "string") {
         if (column.includes("_attribute__")) {
@@ -1591,6 +1692,49 @@ abstract class XMLExtension<T> implements XMLInterface {
               type === "number" ? value : `'${value}'`
             } `;
           }
+          if (columnAttr.length == 4) {
+            if (this.spatialNamespace.prefix == "gml") {
+              selection.root += `${access_col}${columnAttr[1]}/*`;
+            }
+            if (this.spatialNamespace.prefix == "kml") {
+              selection.root += `${access_col}ExtendedData/*/*[@name='${columnAttr[1]}']/*`;
+            }
+            selection.root += `/${access_col}${columnAttr[2]}/@${
+              columnAttr[3]
+            } ${translation} ${type === "number" ? value : `'${value}'`} `;
+            selection.nested = `${access_col}${columnAttr[2]}/@${
+              columnAttr[3]
+            } ${translation}${type === "number" ? value : `'${value}'`} `;
+            // selection.root.add(`$col/@${columnAttr[3]}`);
+            // tempNestedArr.add(`*:${columnAttr[2]}`);
+          }
+        } else if (column.includes("_undef__")) {
+          let undefCol = column.split("__")[1];
+          let selectionPath = ``;
+          let subselectionPath = ``;
+          if (this.spatialNamespace.prefix == "gml") {
+            subselectionPath = `${access_col}${undefCol}`;
+          }
+          if (this.spatialNamespace.prefix == "kml") {
+            // *:ExtendedData/*/*[@name='nama']='Masjid Algufron Malendeng'
+            selectionPath = `${access_col}ExtendedData/*/`;
+            subselectionPath = `*[@name='${undefCol}']`;
+          }
+          selection.root += `(${selectionPath}${subselectionPath} ${translation} ${
+            type === "number" ? value : `'${value}'`
+          } or `;
+          selection.root += `@${undefCol} ${translation} ${
+            type === "number" ? value : `'${value}'`
+          } or `;
+          selection.root += `${selectionPath}*/@${undefCol} ${translation} ${
+            type === "number" ? value : `'${value}'`
+          } or `;
+          selection.root += `${selectionPath}*[@_is_collection='true']/*/*:${undefCol} ${translation} ${
+            type === "number" ? value : `'${value}'`
+          } or `;
+          selection.root += `${selectionPath}*[@_is_collection='true']/*/@${undefCol} ${translation} ${
+            type === "number" ? value : `'${value}'`
+          })`;
         } else if (column.includes("__")) {
           let nestedColumn = column.split("__");
           if (this.spatialNamespace.prefix == "gml") {
@@ -1680,7 +1824,7 @@ abstract class XMLExtension<T> implements XMLInterface {
     };
 
     const selection = recursion(where, 0, 0);
-    // console.log(selection, "selection");
+    console.log(selection, "selection");
 
     return selection;
   }
@@ -1702,13 +1846,13 @@ abstract class XMLExtension<T> implements XMLInterface {
         childColumns: `($${childProjection}|$${childProjection}/@*)`,
         funcColumns: "",
         extendedColumns: "*[not(@_is_collection='true')]",
-        nestedColumns: "*|@*",
+        nestedColumns: "(*|@*)",
         rawColumns: [...columns],
-        nestedChildColumns: "$col|$col/@*",
+        nestedChildColumns: "($col|$col/@*)",
       };
     }
-    let tempresultArr: string[] = [];
-    let tempchildResultArr: string[] = [];
+    let tempresultArr: Set<string> = new Set();
+    let tempchildResultArr: Set<string> = new Set();
     let tempExtendedArr: Set<string> = new Set();
     let tempNestedArr: Set<string> = new Set();
     let tempNestedChildArr: Set<string> = new Set();
@@ -1725,11 +1869,11 @@ abstract class XMLExtension<T> implements XMLInterface {
     arrColumns = [...columns];
 
     arrColumns.forEach((column, index) => {
-      let tempresult = ``;
-      let tempchildResult = ``;
-      let tempExtended = ``;
-      let tempNestedResult = ``;
-      let tempNestedChildResult = ``;
+      // let tempresult = ``;
+      // let tempchildResult = ``;
+      // let tempExtended = ``;
+      // let tempNestedResult = ``;
+      // let tempNestedChildResult = ``;
       if (column == "geometry") {
         // console.log(this.spatialNamespace.prefix);
 
@@ -1746,10 +1890,10 @@ abstract class XMLExtension<T> implements XMLInterface {
         });
 
         if (this.spatialNamespace.prefix == "gml") {
-          tempresult += `*[${tempSpatialTypes.join(" or ")}]`;
+          tempresultArr.add(`*[${tempSpatialTypes.join(" or ")}]`);
         }
         if (this.spatialNamespace.prefix == "kml") {
-          tempresult += `${tempSpatialTypes.join(" or ")}`;
+          tempresultArr.add(`${tempSpatialTypes.join(" or ")}`);
         }
       } else {
         const pattern_func = proj_func_args_1.exec(column);
@@ -1779,94 +1923,109 @@ abstract class XMLExtension<T> implements XMLInterface {
           let columnAttr = column.split("__");
           if (columnAttr.length == 2) {
             if (this.spatialNamespace.prefix == "kml") {
-              tempExtended += `@${columnAttr[1]}`;
+              tempExtendedArr.add(`@${columnAttr[1]}`);
             } else {
-              tempresult += `@${columnAttr[1]}`;
+              tempresultArr.add(`@${columnAttr[1]}`);
             }
           }
           if (columnAttr.length == 3) {
             if (this.spatialNamespace.prefix == "kml") {
-              tempchildResult += `$${childProjection}[@name='${columnAttr[1]}']/@${columnAttr[2]}`;
-              tempExtended += `@name='${columnAttr[1]}'`;
+              tempchildResultArr.add(
+                `$${childProjection}[@name='${columnAttr[1]}']/@${columnAttr[2]}`
+              );
+              tempExtendedArr.add(`@name='${columnAttr[1]}'`);
             }
             if (this.spatialNamespace.prefix == "gml") {
-              tempchildResult += `$${childProjection}[local-name()='${columnAttr[1]}']/@${columnAttr[2]}`;
+              tempchildResultArr.add(
+                `$${childProjection}[local-name()='${columnAttr[1]}']/@${columnAttr[2]}`
+              );
+              tempresultArr.add(`*:${columnAttr[1]}`);
             }
           }
           if (columnAttr.length == 4) {
-            tempNestedChildResult += `$col/@${columnAttr[3]}`;
-            tempNestedResult += `*:${columnAttr[2]}`;
+            tempNestedChildArr.add(`$col/@${columnAttr[3]}`);
+            tempNestedArr.add(`local-name()='${columnAttr[2]}'`);
+            // tempresultArr.add("*[@_is_collection='true']");
           }
+        } else if (column.includes("_undef__")) {
+          let undefCol = column.split("__")[1];
+          if (this.spatialNamespace.prefix == "gml") {
+            tempresultArr.add(`${ignoreQName}${undefCol}`);
+            tempresultArr.add(`@${undefCol}`);
+            tempchildResultArr.add(`$${childProjection}/@${undefCol}`);
+          }
+          if (this.spatialNamespace.prefix == "kml") {
+            tempExtendedArr.add(`@name='${undefCol}'`);
+            tempExtendedArr.add(`@${undefCol}`);
+            tempchildResultArr.add(`$${childProjection}/@${undefCol}`);
+          }
+          tempNestedArr.add(`local-name()='${undefCol}'`);
+          tempNestedChildArr.add(`$col/@${undefCol}`);
         } else if (column.includes("__")) {
           let nestedColumn = column.split("__");
-          if (this.spatialNamespace.prefix == "kml") {
-            tempExtended += `@name='${nestedColumn[0]}'`;
-          }
-          // if (this.spatialNamespace.prefix == "gml") {
-          //   tempresult += `${ignoreQName}${nestedColumn[0]}`;
+          // if (this.spatialNamespace.prefix == "kml") {
+          //   tempExtendedArr.add(`@name='${nestedColumn[0]}'`);
           // }
-          tempNestedResult += `local-name()='${nestedColumn[1]}'`;
-          tempNestedChildResult += `$col`;
+          // if (this.spatialNamespace.prefix == "gml") {
+          //   tempresultArr.add( `${ignoreQName}${nestedColumn[0]}`);
+          // }
+          tempNestedArr.add(`local-name()='${nestedColumn[1]}'`);
+          tempNestedChildArr.add(`$col`);
         } else {
           if (this.spatialNamespace.prefix == "gml") {
-            tempresult += `${ignoreQName}${column}`;
-            tempresult += `| @${column}`;
-            tempchildResult += `$${childProjection}/@${column}`;
-            tempNestedResult += `local-name()='${column}'`;
+            tempresultArr.add(`${ignoreQName}${column}`);
+            // tempresult += `| @${column}`;
+            // tempchildResultArr.add(`$${childProjection}/@${column}`);
+            // tempNestedResult += `local-name()='${column}'`;
           }
           if (this.spatialNamespace.prefix == "kml") {
-            tempExtended += `@name='${column}'`;
-            tempExtended += `or @${column}`;
-            tempchildResult += `$${childProjection}/@${column}`;
+            tempExtendedArr.add(`@name='${column}'`);
+            tempchildResultArr.add(`$${childProjection}`);
+            // tempExtended += `or @${column}`;
+            // tempchildResult += `$${childProjection}/@${column}`;
+            // tempNestedResult += `local-name()='${column}'`;
           }
         }
       }
-      if (tempresult.length > 0) {
-        tempresultArr.push(tempresult);
-      }
-      if (tempchildResult.length > 0) {
-        tempchildResultArr.push(tempchildResult);
-      }
-      if (tempExtended.length > 0) {
-        tempExtendedArr.add(tempExtended);
-      }
-      if (tempNestedResult.length > 0) {
-        tempNestedArr.add(tempNestedResult);
-      }
-      if (tempNestedChildResult.length > 0) {
-        tempNestedChildArr.add(tempNestedChildResult);
-      }
     });
+    let resultArr = [...tempresultArr];
+    let childResultArr = [...tempchildResultArr];
+    let nestedArr = [...tempNestedArr];
+    let extendedArr = [...tempExtendedArr];
+
     let result = ``;
     let childResult = ``;
     let extendedResult = ``;
-    let nestedResult = ``;
-    let nestedChildResult = ``;
-    if (tempresultArr.length > 0 || [...tempExtendedArr].length > 0) {
-      tempchildResultArr.push(`$${childProjection}`);
+    let nestedResult = `*`;
+
+    if (resultArr.length > 0 || extendedArr.length > 0) {
+      childResultArr.push(`$${childProjection}`);
+      tempNestedChildArr.add(`$col`);
       if (this.spatialNamespace.prefix == "kml") {
         result += `*:ExtendedData`;
       }
     }
-    if (tempresultArr.length > 0) {
+    let nestedChildArr = [...tempNestedChildArr];
+    let nestedChildResult = ``;
+    if (resultArr.length > 0) {
       if (this.spatialNamespace.prefix == "kml") {
-        result = `(*[${tempresultArr.join(" or ")}] | *:ExtendedData)`;
+        result = `(*[${resultArr.join(" or ")}] | *:ExtendedData)`;
       }
       if (this.spatialNamespace.prefix == "gml") {
-        result = `(${tempresultArr.join(" | ")})`;
+        result = `(${resultArr.join(" | ")})`;
       }
     }
-    if ([...tempExtendedArr].length > 0) {
-      extendedResult = `*[${[...tempExtendedArr].join(" or ")}]`;
+    if (extendedArr.length > 0) {
+      extendedResult = `*[${extendedArr.join(" or ")}]`;
     }
-    if (tempchildResultArr.length > 0) {
-      childResult = `(${tempchildResultArr.join(" | ")})`;
+    if (childResultArr.length > 0) {
+      childResult = `(${childResultArr.join(" | ")})`;
     }
-    if ([...tempNestedArr].length > 0) {
-      nestedResult += `*[${[...tempNestedArr].join(" or ")}]`;
+    if (nestedArr.length > 0) {
+      nestedResult = `*[${nestedArr.join(" or ")}]`;
     }
-    if ([...tempNestedChildArr].length > 0) {
-      nestedChildResult += `(${[...tempNestedChildArr].join(" | ")})`;
+    if (nestedChildArr.length > 0) {
+      nestedChildResult = `(${nestedChildArr.join(" | ")})`;
     }
 
     // console.log(tempresultArr, "tempres", tempchildResultArr, "tempchild");

@@ -12,6 +12,7 @@ class PostgisExtension {
   private _driver: Extension;
   private totalData: number;
   private totalGetField: Map<string, Set<string>>;
+  public executionTime: number;
 
   get driver() {
     return this._driver;
@@ -22,6 +23,7 @@ class PostgisExtension {
     this._driver = driver;
     this.totalData = 0;
     this.totalGetField = new Map();
+    this.executionTime = 0;
   }
 
   convertToSQL(tree: Select): string {
@@ -40,7 +42,6 @@ class PostgisExtension {
   }
 
   async finalresult(tree: Select) {
-    let getResultTime = new Date().getTime();
     let query = this.convertToSQL(tree);
 
     // console.log(JSON.stringify(tree, null, 2));
@@ -48,7 +49,10 @@ class PostgisExtension {
 
     query = query.replace(/ROW/g, "");
     let pgclient = await Pool.connect();
+    let getResultTime = new Date().getTime();
     let result = await pgclient.query(query);
+    let execTime = new Date().getTime() - getResultTime;
+    this.executionTime = execTime;
     console.log(
       `waktu eksekusi pada PostgreSQL adalah ${
         new Date().getTime() - getResultTime
@@ -231,6 +235,7 @@ class PostgisExtension {
     tree = fixAst(tree);
     console.log(JSON.stringify(tree, null, 2));
 
+    let posttime = new Date().getTime();
     tree = await this.processSubQueryFrom(tree);
     tree = await this.processSubQueryWhere(tree);
     const collections = tree
@@ -245,15 +250,29 @@ class PostgisExtension {
         };
       }) as { name: string; as: string }[];
 
-    const { supportedClauses, unsupportedClauses } = filterWhereStatement(
-      tree,
-      this.driver,
-      this.driver.canJoin && collections.length > 1
+    // let joinIsFullJoin = false;
+    // if (collections.length == 2) {
+    //   joinIsFullJoin =
+    //     (collections!.find((val: any) => val.join && val.on) as any)?.join ==
+    //     "FULL JOIN";
+    // }
+    if (this.driver.supportPreExecutionQuery) {
+      await this.driver.executePreExecutionQuery!(collections[0].name);
+    }
+
+    const { supportedClauses, unsupportedClauses, isGroupBySupported } =
+      filterWhereStatement(tree, this.driver);
+
+    console.log(
+      unsupportedClauses,
+      "unsup",
+      supportedClauses,
+      "sup",
+      isGroupBySupported
     );
 
-    console.log(unsupportedClauses, "unsup", supportedClauses, "sup");
-
     const columns = this.getColumns(tree, unsupportedClauses);
+    console.log(new Date().getTime() - posttime, "pre1");
     // console.log(columns, "columnsget");
     // console.log(supportedClauses, unsupportedClauses, "unsu");
 
@@ -262,7 +281,8 @@ class PostgisExtension {
       supportedClauses,
       this.driver,
       columns.mapColumns,
-      collections
+      collections,
+      isGroupBySupported
     );
     this.totalData += totalData;
     // console.log(totalData);
@@ -284,7 +304,8 @@ class PostgisExtension {
       unsupportedClauses,
       columns.mapColumns,
       columns.funcColumns,
-      this._driver
+      this._driver,
+      isGroupBySupported
     );
   }
 
@@ -318,7 +339,9 @@ class PostgisExtension {
     this.totalData = 0;
     this.totalGetField = new Map<string, Set<string>>();
     if (sql != "") {
+      let pretime = new Date().getTime();
       let tree = buildAst(sql, this.parser);
+      console.log(new Date().getTime() - pretime, "preprocessing");
       const newTree = await this.processSelect(tree);
 
       const finalResult = await this.finalresult(newTree);

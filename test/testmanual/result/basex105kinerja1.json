@@ -1,0 +1,87 @@
+[
+  {
+    "id": "Q-D1",
+    "executionTime": 8384,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "puskesmas_dummy",
+        "sum": 3
+      }
+    ],
+    "dbms_executionTime": 5477,
+    "pg_executionTime": 162,
+    "totalRows": 40072,
+    "dbmsRows": [
+      40072
+    ]
+  },
+  {
+    "id": "Q-D2",
+    "executionTime": 2368,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "puskesmas_dummy",
+        "sum": 3
+      }
+    ],
+    "dbms_executionTime": 2350,
+    "pg_executionTime": 3,
+    "totalRows": 4,
+    "dbmsRows": [
+      4
+    ]
+  },
+  {
+    "id": "Q-D3",
+    "executionTime": 523905,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "puskesmas_dummy__kecamatan_dummy",
+        "sum": 6
+      }
+    ],
+    "dbms_executionTime": 519924,
+    "pg_executionTime": 219,
+    "totalRows": 29817,
+    "dbmsRows": [
+      29817
+    ]
+  },
+  {
+    "id": "Q-D4",
+    "executionTime": 321091,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "puskesmas_dummy__kecamatan_dummy",
+        "sum": 8
+      }
+    ],
+    "dbms_executionTime": 313528,
+    "pg_executionTime": 461,
+    "totalRows": 40072,
+    "dbmsRows": [
+      40072
+    ]
+  },
+  {
+    "id": "Q-D5",
+    "executionTime": 204379,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "puskesmas_dummy__kecamatan_dummy",
+        "sum": 4
+      }
+    ],
+    "dbms_executionTime": 204315,
+    "pg_executionTime": 1,
+    "totalRows": 4,
+    "dbmsRows": [
+      4
+    ]
+  }
+]

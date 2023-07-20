@@ -8,6 +8,8 @@ const existdb = require("@existdb/node-exist");
 
 class ExistDBExtension extends XMLExtension<typeof existdb> {
   supportPreExecutionQuery: boolean = true;
+  executionTime: number[] = [];
+  totalRow: number[] = [];
   version: XMLConfig;
   supportedXMLExtensionType = ["gml"];
   spatialModuleNamespaces = [];
@@ -197,6 +199,7 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
     // console.log(this.constructXQuery(collection, where, projection, columnAs));
 
     try {
+      let getResultTime = new Date().getTime();
       const query = await this.client.queries.read(
         this.constructXQuery(collection, where, projection, groupby, columnAs),
         {
@@ -205,6 +208,8 @@ class ExistDBExtension extends XMLExtension<typeof existdb> {
           limit: 999999999,
         }
       );
+      let execTime = new Date().getTime() - getResultTime;
+      this.executionTime.push(execTime);
       console.log(Boolean(this.client));
       // console.log(query);
 

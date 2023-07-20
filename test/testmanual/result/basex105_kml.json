@@ -1,0 +1,206 @@
+[
+  {
+    "id": "Q-A5",
+    "executionTime": 818,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "masjid_manado_kml",
+        "sum": 15
+      }
+    ],
+    "dbms_executionTime": 146,
+    "pg_executionTime": 31,
+    "totalRows": 217,
+    "dbmsRows": [
+      721
+    ]
+  },
+  {
+    "id": "Q-A6",
+    "executionTime": 23,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "masjid_manado_kml",
+        "sum": 2
+      }
+    ],
+    "dbms_executionTime": 9,
+    "pg_executionTime": 2,
+    "totalRows": 30,
+    "dbmsRows": [
+      30
+    ]
+  },
+  {
+    "id": "Q-A7",
+    "executionTime": 244,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "indonesia_provinces_kml",
+        "sum": 4
+      }
+    ],
+    "dbms_executionTime": 53,
+    "pg_executionTime": 11,
+    "totalRows": 12,
+    "dbmsRows": [
+      204
+    ]
+  },
+  {
+    "id": "Q-A8",
+    "executionTime": 66,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "indonesia_provinces_gml",
+        "sum": 2
+      }
+    ],
+    "dbms_executionTime": 10,
+    "pg_executionTime": 2,
+    "totalRows": 20,
+    "dbmsRows": [
+      300
+    ]
+  },
+  {
+    "id": "Q-B5",
+    "executionTime": 780,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "masjid_manado_kml__indonesia_provinces_kml",
+        "sum": 24
+      }
+    ],
+    "dbms_executionTime": 351,
+    "pg_executionTime": 35,
+    "totalRows": 721,
+    "dbmsRows": [
+      721
+    ]
+  },
+  {
+    "id": "Q-B6",
+    "executionTime": 281,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "masjid_manado_kml__indonesia_provinces_kml",
+        "sum": 6
+      }
+    ],
+    "dbms_executionTime": 163,
+    "pg_executionTime": 2,
+    "totalRows": 24,
+    "dbmsRows": [
+      384
+    ]
+  },
+  {
+    "id": "Q-B7",
+    "executionTime": 59,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "persil_rumah_kml__persil_lahan_kml",
+        "sum": 4
+      }
+    ],
+    "dbms_executionTime": 42,
+    "pg_executionTime": 1,
+    "totalRows": 3,
+    "dbmsRows": [
+      3
+    ]
+  },
+  {
+    "id": "Q-B8",
+    "executionTime": 77,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "persil_rumah_kml__persil_lahan_kml",
+        "sum": 4
+      }
+    ],
+    "dbms_executionTime": 48,
+    "pg_executionTime": 2,
+    "totalRows": 101,
+    "dbmsRows": [
+      101
+    ]
+  },
+  {
+    "id": "Q-C5",
+    "executionTime": 723,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "masjid_manado_kml__indonesia_provinces_kml",
+        "sum": 24
+      }
+    ],
+    "dbms_executionTime": 374,
+    "pg_executionTime": 28,
+    "totalRows": 266,
+    "dbmsRows": [
+      721
+    ]
+  },
+  {
+    "id": "Q-C6",
+    "executionTime": 902,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "puskesmas_kecil_kml__kecamatan_kecil_kml",
+        "sum": 7
+      }
+    ],
+    "dbms_executionTime": 880,
+    "pg_executionTime": 2,
+    "totalRows": 17,
+    "dbmsRows": [
+      17
+    ]
+  },
+  {
+    "id": "Q-C7",
+    "executionTime": 1573,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "persil_rumah_kml__persil_lahan_kml",
+        "sum": 4
+      }
+    ],
+    "dbms_executionTime": 1559,
+    "pg_executionTime": 1,
+    "totalRows": 2,
+    "dbmsRows": [
+      2
+    ]
+  },
+  {
+    "id": "Q-C8",
+    "executionTime": 117,
+    "totaldata": 1,
+    "totalField": [
+      {
+        "col": "persil_rumah_kml__persil_lahan_kml",
+        "sum": 4
+      }
+    ],
+    "dbms_executionTime": 57,
+    "pg_executionTime": 2,
+    "totalRows": 101,
+    "dbmsRows": [
+      101
+    ]
+  }
+]

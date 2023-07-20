@@ -5,6 +5,8 @@ import { GeoJSON } from "../extension";
 
 class MongoExtension extends JsonExtension<MongoClient> {
   supportPreExecutionQuery: boolean = false;
+  executionTime: number[] = [];
+  totalRow: number[] = [];
   canJoin: boolean = false;
   constructFunctionQuery(clause: any): string {
     const funcStr = this.astToFuncStr(clause);

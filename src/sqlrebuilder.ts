@@ -180,45 +180,48 @@ function rebuildFromTree(
   if (tree.columns != "*") {
     undefinedCol = tree.columns.filter(
       val =>
-        !columns.some(
-          el => val.expr.type == "column_ref" && el == val.expr.column
-        )
+        val.expr.type == "column_ref" && val.expr.column.includes("_undef__")
     );
     if (undefinedCol.length > 0) {
       const replaceCol = undefinedCol.map(el => ({
-        prevCol: columns.find(
-          val =>
-            !val.includes("_func__") &&
-            val.includes("__") &&
-            val.includes(el.expr.column)
+        prevCol: columns.find(val =>
+          val.includes(el.expr.column.split("__")[1])
         ),
         replacedCol: el.expr.column,
       }));
       // console.log(replaceCol);
 
-      columns = columns.map(val => {
-        const replacedCol = replaceCol.find(
-          el => el.prevCol == val
-        )?.replacedCol;
-        if (replacedCol) {
-          return replacedCol;
-        }
-        return val;
-      });
-      selectTree.columns = selectTree.columns.map((val: any) => {
-        const replacedCol = replaceCol.find(
-          el => val.expr.type == "column_ref" && el.prevCol == val.expr.column
-        )?.replacedCol;
-        if (replacedCol) {
-          const temp = { ...val };
-          temp.expr.column = replacedCol;
-          return temp;
-        }
-        return val;
-      });
+      // columns = columns.map(val => {
+      //   const replacedCol = replaceCol.find(
+      //     el => el.prevCol == val
+      //   )?.replacedCol;
+      //   if (replacedCol) {
+      //     return replacedCol;
+      //   }
+      //   return val;
+      // });
+      columns = [...columns, ...replaceCol.map(el => el.replacedCol)];
+      // selectTree.columns = selectTree.columns.map((val: any) => {
+      //   const replacedCol = replaceCol.find(
+      //     el => val.expr.type == "column_ref" && el.prevCol == val.expr.column
+      //   )?.replacedCol;
+      //   if (replacedCol) {
+      //     const temp = { ...val };
+      //     temp.expr.column = replacedCol;
+      //     return temp;
+      //   }
+      //   return val;
+      // });
+      selectTree.columns = [
+        ...selectTree.columns,
+        ...replaceCol.map(el => ({
+          expr: { type: "column_ref", table: null, column: el.replacedCol },
+          as: null,
+        })),
+      ];
       replaceCol.forEach(element => {
         mapType[element.replacedCol] = mapType[element.prevCol];
-        delete mapType[element.prevCol];
+        // delete mapType[element.prevCol];
       });
     }
   }
@@ -383,8 +386,10 @@ function rebuildTree(
   unsupportedClauses: any[],
   mapColumnsPerTable: Map<string, Set<string>>,
   funcColumns: any[],
-  driver: Extension
+  driver: Extension,
+  isGroupBySupported: boolean
 ): Select {
+  let exectime = new Date().getTime();
   const oldTree = _.cloneDeep(tree);
   const newTree = tree;
   newTree.from = newTree.from as any[];
@@ -411,7 +416,7 @@ function rebuildTree(
     dataList[0].as,
     driver
   );
-  console.log(JSON.stringify(newTree.where, null, 2));
+  // console.log(JSON.stringify(newTree.where, null, 2));
 
   newTree.columns = rebuildJoinedColumn(newTree, joined, driver);
   if (newTree.columns != "*") {
@@ -421,9 +426,28 @@ function rebuildTree(
       joined
     );
   }
-  if (driver.constructGroupByQuery) {
+  if (driver.constructGroupByQuery && isGroupBySupported) {
     newTree.groupby = null;
+  } else {
+    if (
+      newTree.groupby &&
+      !isGroupBySupported &&
+      newTree.columns != "*" &&
+      joined &&
+      oldTree.from?.length == 2
+    ) {
+      newTree.groupby = newTree.groupby.map(val => {
+        const temp = { ...val };
+        temp.table = null;
+        const col = (oldTree.columns as Column[]).find(
+          el => el.expr.type == "column_ref" && el.expr.column == val.column
+        );
+        temp.column = col?.as ? col.as : val.column;
+        return temp as ColumnRef;
+      });
+    }
   }
+  console.log(new Date().getTime() - exectime, "pre4");
   // console.log(newTree.columns, funcColumns);
 
   // console.log(JSON.stringify(newTree.columns, null, 2));

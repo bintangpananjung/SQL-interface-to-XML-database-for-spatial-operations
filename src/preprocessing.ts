@@ -3,14 +3,19 @@ import { cond, result } from "lodash";
 import { Extension, XMLConfig } from "../extension/extension";
 import { DEFAULT_TABLE } from "./constant";
 import { rebuildWhere } from "./sqlrebuilder";
+import { XMLExtension } from "../extension/xml_extension";
 
 function filterWhereStatement(
   tree: Select,
-  driver: Extension,
-  canJoin: boolean
-): { supportedClauses: any; unsupportedClauses: any[] } {
+  driver: Extension
+): {
+  supportedClauses: any;
+  unsupportedClauses: any[];
+  isGroupBySupported: boolean;
+} {
   let supportedClauses: any = {};
   let unsupportedClauses: any[] = [];
+  let isGroupBySupported = true;
   tree
     .from!.filter(val => !val.expr)
     .forEach(val => {
@@ -27,6 +32,7 @@ function filterWhereStatement(
     return {
       supportedClauses,
       unsupportedClauses,
+      isGroupBySupported,
     };
   }
 
@@ -80,14 +86,46 @@ function filterWhereStatement(
       }
 
       let table: string = DEFAULT_TABLE;
+      let isSupportedColumn = true;
       if (condition.type === "column_ref") {
+        if (
+          !condition.column.includes("_undef__") &&
+          // !condition.column.includes("_attribute__") &&
+          condition.column.includes("__")
+          // condition.column.split("__").length == 2
+        ) {
+          if (condition.column.includes("_attribute__")) {
+            if (condition.column.split("__").length == 4) {
+              isSupportedColumn = false;
+              // isGroupBySupported = false;
+            }
+          } else {
+            isSupportedColumn = false;
+            // isGroupBySupported = false;
+          }
+        }
         table = condition.table;
       } else if (condition.type === "function") {
         table = condition.args.value[0].table;
       }
+      // if (
+      //   !(
+      //     supportedFunction &&
+      //     supportedType &&
+      //     supportedOperator &&
+      //     isNotQuery &&
+      //     isSupportedColumn
+      //   )
+      // ) {
+      //   isGroupBySupported = false;
+      // }
       return {
         isSupported:
-          supportedFunction && supportedType && supportedOperator && isNotQuery,
+          supportedFunction &&
+          supportedType &&
+          supportedOperator &&
+          isNotQuery &&
+          isSupportedColumn,
         table,
       };
     };
@@ -100,15 +138,21 @@ function filterWhereStatement(
       let table = "";
       for (const pattern of regexPatterns) {
         const funcStr = astToFuncStr(ast);
+        // console.log(funcStr);
+
         pattern.regex.lastIndex = 0;
         const result = pattern.regex.exec(funcStr);
+        // console.log(result, "res");
         if (result == null) {
           continue;
         }
+
         if (pattern.version) {
           const version = pattern.version.find(val =>
             ((driver as any).version as XMLConfig).version.some(el => el == val)
           );
+          // console.log(version, "ver");
+
           if (!version) {
             continue;
           }
@@ -116,8 +160,23 @@ function filterWhereStatement(
         const isFunctionMatch = pattern.matches.find(
           val => val == result.groups!.fname
         );
+        // console.log(isFunctionMatch, "if");
+
         if (!isFunctionMatch) {
           continue;
+        }
+        if (driver.extensionType == "xml") {
+          const xmldriver = driver as XMLExtension<any>;
+          const isSpatialFormatMatch = xmldriver.version.modules
+            .find(el => el.extension == xmldriver.spatialNamespace.prefix)
+            ?.supportedSpatialFunctionPrefix.some(
+              el => el.postGISName == result.groups!.fname
+            );
+          // console.log(isSpatialFormatMatch, "sp");
+
+          if (!isSpatialFormatMatch) {
+            continue;
+          }
         }
         isSupported = true;
         table = result.groups!.tname;
@@ -201,6 +260,7 @@ function filterWhereStatement(
 
     return isSupportedClauseAndChildCondition(clause);
   };
+  // console.log(conditionList, "ini conditionList");
 
   for (const condition of conditionList) {
     const { isSupported, table } = isSupportedClause(condition);
@@ -211,7 +271,25 @@ function filterWhereStatement(
         supportedClauses[table] = [condition];
       }
     } else {
+      isGroupBySupported = false;
       unsupportedClauses.push(condition);
+    }
+    if (condition.left && condition.left.type == "column_ref") {
+      const column = condition.left.column;
+      // console.log(condition, "condition");
+      if (
+        column.includes("_undef__")
+        // ||
+        // (column.includes("_attribute__") && column.split("__").length == 4) ||
+        // (!column.includes("_attribute__") &&
+        //   !column.includes("_undef__") &&
+        //   column.includes("__"))
+      ) {
+        unsupportedClauses.push(condition);
+      }
+      // else if(){
+
+      // }
     }
   }
 
@@ -227,6 +305,7 @@ function filterWhereStatement(
   return {
     supportedClauses,
     unsupportedClauses,
+    isGroupBySupported,
   };
 }
 

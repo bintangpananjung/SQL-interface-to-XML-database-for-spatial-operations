@@ -138,6 +138,7 @@ router.post("/", async (req, res) => {
     const executionTime = new Date().getTime() - start;
     const totalfetchdata = 0;
     const totalfinalresultdata = results ? results?.finalResult.rows.length : 0;
+
     res.render("index", {
       title,
       input: sql,
@@ -153,11 +154,17 @@ router.post("/", async (req, res) => {
         dbms,
         totalfetchdata: results?.totalData,
         totalfinalresultdata,
+        dbms_executionTime: gis.driver.executionTime.reduce(
+          (acc, curr) => acc + curr,
+          0
+        ),
+        pg_executionTime: gis.executionTime,
       },
       dbms,
       totalGetField: results?.totalGetField,
       version: version,
     });
+    gis.driver.executionTime = [];
   } catch (e) {
     res.render("index", {
       title,
@@ -172,6 +179,7 @@ router.post("/", async (req, res) => {
       statistic: undefined,
       version: version,
     });
+    gis.driver.executionTime = [];
   }
 });
 
