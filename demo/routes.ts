@@ -23,7 +23,7 @@ const existdb = new ExistDBExtension();
 const existGis = new PostgisExtension(existdb);
 
 const router = express.Router();
-const title = "Sistem Perbaikan";
+const title = "Antarmuka SQL untuk DBMS dokumen";
 router.get("/", async (req, res) => {
   let dbms = "mongodb";
   if ("dbms" in req.query) {

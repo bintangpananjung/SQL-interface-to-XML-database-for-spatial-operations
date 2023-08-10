@@ -263,7 +263,7 @@ class PostgisExtension {
       await this.driver.executePreExecutionQuery!(collections[0].name);
     }
 
-    const { supportedClauses, unsupportedClauses, isGroupBySupported } =
+    let { supportedClauses, unsupportedClauses, isGroupBySupported } =
       filterWhereStatement(tree, this.driver);
 
     console.log(
@@ -273,6 +273,14 @@ class PostgisExtension {
       "sup",
       isGroupBySupported
     );
+    // if (
+    //   tree.groupby?.findIndex(
+    //     val => val.type == "column_ref" && val.column.includes("_undef__")
+    //   )
+    // ) {
+    //   isGroupBySupported = false;
+    //   tree.groupby = tree.groupby
+    // }
 
     const columns = this.getColumns(tree, unsupportedClauses);
     console.log(new Date().getTime() - posttime, "pre1");
